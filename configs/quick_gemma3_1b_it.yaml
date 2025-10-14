@@ -49,7 +49,7 @@ slora:
   enable: true
   m: 512
   k: 64
-  target_novelty: 0.70
+  target_novelty: 0.30
   novelty_scaler: 10.0
   novelty_ema_rate: 0.01
   burn_in: 200

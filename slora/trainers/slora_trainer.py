@@ -33,18 +33,21 @@ class SLoRATrainer(Trainer):
         self.accept_history = []
 
     def _sync_gate_step(self) -> None:
-        """Synchronize gate step across DDP ranks - single all-reduce for counts + threshold."""
+        """Synchronize gate step across DDP ranks."""
         self.gate.step()
 
         if self.accelerator.num_processes > 1:
-            sync_tensor = torch.tensor(
-                [float(self.gate.step_count), float(self.gate.accepted_count), self.gate.current_novelty_threshold],
+            counts_tensor = torch.tensor(
+                [float(self.gate.step_count), float(self.gate.accepted_count)],
                 device=self.accelerator.device
             )
-            torch.distributed.all_reduce(sync_tensor, op=torch.distributed.ReduceOp.AVG)
-            self.gate.step_count = int(sync_tensor[0].item())
-            self.gate.accepted_count = int(sync_tensor[1].item())
-            self.gate.current_novelty_threshold = sync_tensor[2].item()
+            torch.distributed.all_reduce(counts_tensor, op=torch.distributed.ReduceOp.MAX)
+            self.gate.step_count = int(counts_tensor[0].item())
+            self.gate.accepted_count = int(counts_tensor[1].item())
+
+            threshold_tensor = torch.tensor([self.gate.current_novelty_threshold], device=self.accelerator.device)
+            torch.distributed.all_reduce(threshold_tensor, op=torch.distributed.ReduceOp.AVG)
+            self.gate.current_novelty_threshold = threshold_tensor.item()
 
     def _initialize_gate(self) -> None:
         """Initialize gate after model is set up."""
