@@ -49,7 +49,9 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
     print("-" * 80)
     print(f"Baseline: {baseline_loss:.4f}")
     print(f"SLoRA:    {slora_loss:.4f}")
-    print(f"Diff:     {slora_loss - baseline_loss:+.4f} ({(slora_loss - baseline_loss) / baseline_loss * 100:+.2f}%)")
+    print(
+        f"Diff:     {slora_loss - baseline_loss:+.4f} ({(slora_loss - baseline_loss) / baseline_loss * 100:+.2f}%)"
+    )
 
     print("\n⏱️  RUNTIME")
     print("-" * 80)
@@ -64,7 +66,9 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
     print("-" * 80)
 
     gate_file = slora_path / "gate_metrics.json"
-    gate_entries = [e for e in slora_state["log_history"] if "gate/acceptance_rate_overall" in e]
+    gate_entries = [
+        e for e in slora_state["log_history"] if "gate/acceptance_rate_overall" in e
+    ]
 
     acc_rate = None
     if gate_file.exists():
@@ -120,14 +124,17 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
         if loss_diff_pct < 0.5 and rejection_rate >= 30:
             print("\n🎉 SUCCESS!")
         elif loss_diff_pct < 0.5:
-            print(f"\n⚠️  Loss good but rejection {rejection_rate:.1f}% < 30%. Increase tau_n")
+            print(
+                f"\n⚠️  Loss good but rejection {rejection_rate:.1f}% < 30%. Increase tau_n"
+            )
         elif rejection_rate >= 30:
-            print(f"\n⚠️  Rejection good but loss degraded {loss_diff_pct:.2f}%. Decrease tau_n")
+            print(
+                f"\n⚠️  Rejection good but loss degraded {loss_diff_pct:.2f}%. Decrease tau_n"
+            )
         else:
             print("\n❌ Needs tuning")
 
     print("=" * 80)
-
 
 
 def main():
@@ -137,7 +144,6 @@ def main():
     parser.add_argument("--output", type=str, default="reports/analysis.md")
     args = parser.parse_args()
 
-    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     analyze_runs(args.baseline, args.slora, args.output)
 
 
