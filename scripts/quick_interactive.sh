@@ -16,6 +16,8 @@ export PYTHONPATH="$(pwd):${PYTHONPATH}"
 export WANDB_PROJECT="slora"
 export CUDA_VISIBLE_DEVICES=0,1        # use 2 GPUs only
 export OMP_NUM_THREADS=4               # keep CPU threads modest
+export TRANSFORMERS_ATTENTION_BACKEND=SDPA
+export FLASH_ATTENTION_SKIP=True
 
 # --- Baseline run ---
 echo "Running baseline LoRA..."
