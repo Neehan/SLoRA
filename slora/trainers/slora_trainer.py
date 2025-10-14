@@ -45,9 +45,9 @@ class SLoRATrainer(Trainer):
             "vocab_size": config.vocab_size,  # type: ignore
             "m": self.gate_config["m"],
             "k": self.gate_config["k"],
-            "accept_prob": self.gate_config["accept_prob"],
-            "accept_prob_scaler": self.gate_config["accept_prob_scaler"],
-            "accept_ema_rate": self.gate_config["accept_ema_rate"],
+            "target_novelty": self.gate_config["target_novelty"],
+            "novelty_scaler": self.gate_config["novelty_scaler"],
+            "novelty_ema_rate": self.gate_config["novelty_ema_rate"],
             "burn_in": self.gate_config["burn_in"],
             "seed": self.gate_config["seed"],
             "device": str(device),
@@ -62,9 +62,9 @@ class SLoRATrainer(Trainer):
                 "gate/d_hidden": config.hidden_size,  # type: ignore
                 "gate/m": gate_params["m"],
                 "gate/k": gate_params["k"],
-                "gate/target_accept_prob": gate_params["accept_prob"],
-                "gate/accept_prob_scaler": gate_params["accept_prob_scaler"],
-                "gate/accept_ema_rate": gate_params["accept_ema_rate"],
+                "gate/target_novelty": gate_params["target_novelty"],
+                "gate/novelty_scaler": gate_params["novelty_scaler"],
+                "gate/novelty_ema_rate": gate_params["novelty_ema_rate"],
                 "gate/burn_in": gate_params["burn_in"],
             }
         )
@@ -131,6 +131,10 @@ class SLoRATrainer(Trainer):
             ret_loss = torch.tensor(0.0, device=self.accelerator.device)
 
         self.gate.step()
+        if self.accelerator.num_processes > 1:
+            threshold_tensor = torch.tensor([self.gate.current_novelty_threshold], device=self.accelerator.device)
+            torch.distributed.all_reduce(threshold_tensor, op=torch.distributed.ReduceOp.AVG)
+            self.gate.current_novelty_threshold = threshold_tensor.item()
 
         return ret_loss
 
@@ -157,7 +161,7 @@ class SLoRATrainer(Trainer):
             logs["gate/acceptance_rate"] = self.gate.acceptance_rate()
             logs["gate/accepted_steps"] = self.gate.accepted_count
             logs["gate/total_steps"] = self.gate.step_count
-            logs["gate/current_accept_prob"] = self.gate.current_accept_prob
+            logs["gate/current_novelty_threshold"] = self.gate.current_novelty_threshold
         super().log(logs, start_time)
 
     def _save_checkpoint(self, model, trial, metrics=None):

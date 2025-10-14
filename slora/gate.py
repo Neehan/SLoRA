@@ -39,9 +39,9 @@ class HeadGradientGate:
         vocab_size: int,
         m: int,
         k: int,
-        accept_prob: float,
-        accept_prob_scaler: float,
-        accept_ema_rate: float,
+        target_novelty: float,
+        novelty_scaler: float,
+        novelty_ema_rate: float,
         burn_in: int,
         seed: int,
         device: str,
@@ -54,10 +54,10 @@ class HeadGradientGate:
         self.vocab_size = vocab_size
         self.m = m
         self.k = k
-        self.target_accept_prob = accept_prob
-        self.beta = accept_prob_scaler
-        self.current_accept_prob = accept_prob
-        self.accept_ema_rate = accept_ema_rate
+        self.target_novelty = target_novelty
+        self.beta = novelty_scaler
+        self.current_novelty_threshold = target_novelty
+        self.novelty_ema_rate = novelty_ema_rate
         self.burn_in = burn_in
         self.k_topk = k_topk
         self.device = torch.device(device)
@@ -158,15 +158,15 @@ class HeadGradientGate:
         """
         Probabilistic gating with smooth sigmoid acceptance.
 
-        Acceptance probability: a(s) = σ(β(s - τ))
-        where s is novelty score, β controls steepness, τ is current_accept_prob threshold.
+        Acceptance probability: a(s) = σ(β(s - threshold))
+        where s is novelty score, β controls steepness, threshold adapts via EMA.
 
-        After burn-in, adapt current_accept_prob via EMA to maintain target_accept_prob.
+        After burn-in, adapt threshold via EMA to maintain target_novelty acceptance rate.
         """
         if self.step_count < self.burn_in:
             return True
 
-        acceptance_prob = torch.sigmoid(torch.tensor(self.beta * (novelty - self.current_accept_prob))).item()
+        acceptance_prob = torch.sigmoid(torch.tensor(self.beta * (novelty - self.current_novelty_threshold))).item()
         rand_val = torch.rand(1, generator=self.rng, device=self.device).item()
         return rand_val < acceptance_prob
 
@@ -176,13 +176,13 @@ class HeadGradientGate:
         self.accepted_count += 1
 
     def step(self) -> None:
-        """Increment step counter and adapt current_accept_prob threshold via EMA."""
+        """Increment step counter and adapt threshold via EMA."""
         self.step_count += 1
 
         if self.step_count > self.burn_in:
             current_rate = self.acceptance_rate()
-            error = self.target_accept_prob - current_rate
-            self.current_accept_prob += self.accept_ema_rate * error
+            error = self.target_novelty - current_rate
+            self.current_novelty_threshold += self.novelty_ema_rate * error
 
     def acceptance_rate(self) -> float:
         """Compute overall acceptance rate."""

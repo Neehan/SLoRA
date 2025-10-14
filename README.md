@@ -151,9 +151,9 @@ gate = HeadGradientGate(
     vocab_size=50257,        # Tokenizer vocab size
     m=512,                   # TensorSketch dimension
     k=64,                    # Rank of streaming basis
-    accept_prob=0.30,        # Target acceptance rate
-    accept_prob_scaler=10.0, # Sigmoid steepness β
-    accept_ema_rate=0.01,    # EMA learning rate for threshold adaptation
+    target_novelty=0.30,        # Target acceptance rate
+    target_novelty_scaler=10.0, # Sigmoid steepness β
+    novelty_ema_rate=0.01,    # EMA learning rate for threshold adaptation
     burn_in=2000,            # Always accept first N steps
     seed=0,
     device='cuda',
@@ -193,9 +193,9 @@ from slora import SLoRATrainer
 gate_config = {
     "m": 512,
     "k": 64,
-    "accept_prob": 0.30,
-    "accept_prob_scaler": 10.0,
-    "accept_ema_rate": 0.01,
+    "target_novelty": 0.30,
+    "target_novelty_scaler": 10.0,
+    "novelty_ema_rate": 0.01,
     "burn_in": 2000,
     "seed": 0,
     "reorth_every": 128,
@@ -235,9 +235,9 @@ All configs are in `configs/*.yaml`. Key parameters:
 - `slora.m`: TensorSketch dimension (512, must be power of 2 for FFT)
 - `slora.k`: Rank of streaming basis (64)
 - `slora.k_topk`: Top-K logits for sparse error sketch (64, 32-128 range)
-- `slora.accept_prob`: Target acceptance rate (0.2-0.4, default 0.30)
-- `slora.accept_prob_scaler`: Sigmoid steepness β (5-20, default 10.0)
-- `slora.accept_ema_rate`: EMA learning rate for threshold adaptation (0.005-0.02, default 0.01)
+- `slora.target_novelty`: Target acceptance rate (0.2-0.4, default 0.30)
+- `slora.target_novelty_scaler`: Sigmoid steepness β (5-20, default 10.0)
+- `slora.novelty_ema_rate`: EMA learning rate for threshold adaptation (0.005-0.02, default 0.01)
 - `slora.burn_in`: Steps to always accept (2000-3000)
 - `slora.reorth_every`: Re-orthonormalize sketch frequency (128)
 
@@ -251,15 +251,15 @@ All configs are in `configs/*.yaml`. Key parameters:
 ## Hyperparameter Tuning
 
 **Start with defaults:**
-- `accept_prob=0.30`, `accept_prob_scaler=10.0`, `accept_ema_rate=0.01`, `m=512`, `k=64`, `burn_in=2000`
+- `target_novelty=0.30`, `target_novelty_scaler=10.0`, `novelty_ema_rate=0.01`, `m=512`, `k=64`, `burn_in=2000`
 
 **If acceptance rate doesn't converge to target:**
-- Increase `accept_ema_rate` to 0.02 (faster adaptation)
-- Decrease `accept_prob_scaler` to 5.0 (softer sigmoid)
+- Increase `novelty_ema_rate` to 0.02 (faster adaptation)
+- Decrease `target_novelty_scaler` to 5.0 (softer sigmoid)
 
 **If acceptance is too noisy:**
-- Decrease `accept_ema_rate` to 0.005 (slower, more stable)
-- Increase `accept_prob_scaler` to 15-20 (sharper sigmoid)
+- Decrease `novelty_ema_rate` to 0.005 (slower, more stable)
+- Increase `target_novelty_scaler` to 15-20 (sharper sigmoid)
 
 **If early instability:**
 - Increase `burn_in` to 3000-5000
@@ -311,7 +311,7 @@ Metrics logged to W&B:
 **Acceptance rate = 100%:**
 - Basis not updating or threshold too low
 - Check `gate/novelty` is decreasing over time
-- Decrease `accept_prob` (target rate) or increase `accept_prob_scaler`
+- Decrease `target_novelty` (target rate) or increase `target_novelty_scaler`
 
 **OOM errors:**
 - Reduce `per_device_train_batch_size`
@@ -351,7 +351,7 @@ Metrics logged to W&B:
 **Immediate (validation):**
 1. Baseline comparison: verify ≥30% token efficiency improvement at comparable loss
 2. Ablation studies: novelty-only vs loss-floor vs combined
-3. Hyperparameter sensitivity: accept_prob, accept_prob_scaler, k, burn_in
+3. Hyperparameter sensitivity: target_novelty, target_novelty_scaler, k, burn_in
 
 **Next steps (if validation succeeds):**
 1. Scale to 7B-13B models with QLoRA
