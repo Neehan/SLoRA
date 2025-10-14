@@ -42,15 +42,25 @@ def prepare_data(config: Dict[str, Any], tokenizer):
 
     def formatting_func(example):
         """Format example as chat template."""
-        text = tokenizer.apply_chat_template(
-            example["messages"],
-            tokenize=False,
-            add_generation_prompt=False,
-        )
-        return {"text": text}
+        try:
+            text = tokenizer.apply_chat_template(
+                example["messages"],
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+            return {"text": text}
+        except Exception:
+            return {"text": None}
 
+    dataset_orig_size = len(dataset)
     dataset = dataset.map(formatting_func)
+    dataset = dataset.filter(lambda x: x["text"] is not None)
+    logger.info(f"Train dataset: kept {len(dataset)}/{dataset_orig_size} examples (skipped {dataset_orig_size - len(dataset)})")
+
+    eval_orig_size = len(eval_dataset)
     eval_dataset = eval_dataset.map(formatting_func)
+    eval_dataset = eval_dataset.filter(lambda x: x["text"] is not None)
+    logger.info(f"Eval dataset: kept {len(eval_dataset)}/{eval_orig_size} examples (skipped {eval_orig_size - len(eval_dataset)})")
 
     def tokenize_func(examples):
         """Tokenize text."""
