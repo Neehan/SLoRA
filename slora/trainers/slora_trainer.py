@@ -143,9 +143,11 @@ class SLoRATrainer(Trainer):
             self.optimizer.zero_grad(set_to_none=True)
 
         if (self.gate.step_count % self.args.logging_steps) == 0:
+            avg_novelty = sum(self.novelty_history) / len(self.novelty_history) if self.novelty_history else 0.0
             self.log(
                 {
                     "gate/novelty": novelty,
+                    "gate/novelty_avg": avg_novelty,
                     "gate/accept": int(accept),
                     "gate/acceptance_rate": self.gate.acceptance_rate(),
                     "gate/accepted_steps": self.gate.accepted_count,
@@ -172,11 +174,13 @@ class SLoRATrainer(Trainer):
 
         if self.enable_gate and self.gate is not None and checkpoint_folder is not None:
 
+            avg_novelty = sum(self.novelty_history) / len(self.novelty_history) if self.novelty_history else 0.0
             gate_metrics = {
                 "acceptance_rate": self.gate.acceptance_rate(),
                 "accepted_steps": self.gate.accepted_count,
                 "total_steps": self.gate.step_count,
                 "rejected_steps": self.gate.step_count - self.gate.accepted_count,
+                "avg_novelty": avg_novelty,
                 "novelty_history": self.novelty_history,
                 "accept_history": self.accept_history,
             }
