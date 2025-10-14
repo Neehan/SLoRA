@@ -156,8 +156,14 @@ class SubspaceGate:
         self.accepted_count += 1
 
     def step(self) -> None:
-        """Increment step counter."""
+        """Increment step counter and adapt tau_n."""
         self.step_count += 1
+
+        if self.step_count > self.burn_in and self.step_count % 50 == 0:
+            current_rate = self.acceptance_rate()
+            target_rate = 1.0 - self.tau_n
+            error = current_rate - target_rate
+            self.tau_n = max(0.0, min(1.0, self.tau_n + error * 0.01))
 
     def acceptance_rate(self) -> float:
         """Compute overall acceptance rate."""

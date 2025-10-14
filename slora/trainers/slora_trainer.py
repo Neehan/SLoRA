@@ -131,6 +131,8 @@ class SLoRATrainer(Trainer):
         self.novelty_history.append(novelty)
         self.accept_history.append(int(accept))
 
+        self.gate.step()
+
         if accept:
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.args.max_grad_norm
@@ -140,9 +142,7 @@ class SLoRATrainer(Trainer):
         else:
             self.optimizer.zero_grad(set_to_none=True)
 
-        self.gate.step()
-
-        if self.state.global_step % self.args.logging_steps == 0:
+        if (self.gate.step_count % self.args.logging_steps) == 0:
             self.log(
                 {
                     "gate/novelty": novelty,
