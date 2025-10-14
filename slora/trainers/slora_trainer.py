@@ -123,7 +123,8 @@ class SLoRATrainer(Trainer):
             if self.args.gradient_accumulation_steps > 1:
                 loss = loss / self.args.gradient_accumulation_steps
             self.accelerator.backward(loss)
-            self.gate.update(z)
+            count_increment = 1.0 / self.accelerator.num_processes if self.accelerator.num_processes > 1 else 1.0
+            self.gate.update(z, count_increment=count_increment)
             ret_loss = loss.detach()
         else:
             self.optimizer.zero_grad(set_to_none=True)  # type: ignore

@@ -199,10 +199,10 @@ class HeadGradientGate:
 
         return novelty >= self.current_novelty_threshold
 
-    def update(self, z: torch.Tensor) -> None:
+    def update(self, z: torch.Tensor, count_increment: float = 1.0) -> None:
         """Update streaming basis with normalized sketch."""
         self.sketch.update(z)
-        self.accepted_count += 1
+        self.accepted_count += count_increment
 
     def step(self, global_step: int) -> None:
         """Adapt threshold to maintain target acceptance rate."""
