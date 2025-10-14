@@ -17,8 +17,8 @@ set -e
 echo "=== SLoRA Quick Test ==="
 echo "Starting time: $(date)"
 
-cd "$(dirname "$0")/.."
-PROJECT_ROOT="$(pwd)"
+PROJECT_ROOT="/home/notadib/projects/SLoRA"
+cd ${PROJECT_ROOT}
 
 export PYTHONPATH="${PYTHONPATH}:${PROJECT_ROOT}"
 export WANDB_PROJECT="slora"
@@ -28,15 +28,21 @@ export TRANSFORMERS_ATTENTION_BACKEND=SDPA
 export FLASH_ATTENTION_SKIP=True
 
 echo "Running baseline LoRA..."
-accelerate launch --config_file ${PROJECT_ROOT}/configs/accelerate_config.yaml \
-    ${PROJECT_ROOT}/scripts/train_slora.py \
-    --config ${PROJECT_ROOT}/configs/baseline.yaml
+accelerate launch \
+    --config_file configs/accelerate_config.yaml \
+    --num_processes 4 \
+    --mixed_precision bf16 \
+    scripts/train_slora.py \
+    --config configs/baseline.yaml
 
 echo "Baseline complete. Starting SLoRA run..."
 
-accelerate launch --config_file ${PROJECT_ROOT}/configs/accelerate_config.yaml \
-    ${PROJECT_ROOT}/scripts/train_slora.py \
-    --config ${PROJECT_ROOT}/configs/quick_gemma3_1b_it.yaml
+accelerate launch \
+    --config_file configs/accelerate_config.yaml \
+    --num_processes 4 \
+    --mixed_precision bf16 \
+    scripts/train_slora.py \
+    --config configs/quick_gemma3_1b_it.yaml
 
 echo "Quick test complete!"
 echo "End time: $(date)"
