@@ -138,12 +138,26 @@ class HeadGradientGate:
     def novelty(self, z: torch.Tensor) -> float:
         """Compute directional novelty from normalized sketch."""
         W = self.sketch.get_basis()
+
+        z_norm = z.norm().item()
+
+        if self.step_count % 50 == 0 or z_norm < 0.99:
+            print(f"[DEBUG] step={self.step_count}, z_norm={z_norm:.6f}, W.shape={W.shape}")
+
         if W.shape[1] == 0:
             return 1.0
 
+        if z_norm < 1e-8:
+            return 0.0
+
         proj = W.T @ z
         redundancy = (proj @ proj).item()
-        return 1.0 - torch.clamp(torch.tensor(redundancy), min=0.0, max=1.0).item()
+        nov = 1.0 - torch.clamp(torch.tensor(redundancy), min=0.0, max=1.0).item()
+
+        if self.step_count % 50 == 0:
+            print(f"[DEBUG]   redundancy={redundancy:.6f}, nov={nov:.6f}")
+
+        return nov
 
     def accept(self, novelty: float) -> bool:
         """Decide whether to accept based on novelty threshold."""
