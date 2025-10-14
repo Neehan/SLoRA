@@ -50,7 +50,7 @@ slora:
   m: 512
   k: 64
   tau_n: 0.30
-  burn_in: 1
+  burn_in: 20
   seed: 0
   reorth_every: 12
   k_topk: 64
