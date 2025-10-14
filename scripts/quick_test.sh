@@ -28,13 +28,15 @@ export OMP_NUM_THREADS=4               # keep CPU threads modest
 export TRANSFORMERS_ATTENTION_BACKEND=SDPA
 export FLASH_ATTENTION_SKIP=True
 
+mkdir -p logs
+
 echo "Running baseline LoRA..."
 accelerate launch \
     --config_file configs/accelerate_config.yaml \
     --num_processes 4 \
     --mixed_precision bf16 \
     scripts/train_slora.py \
-    --config configs/baseline.yaml
+    --config configs/baseline.yaml 2>&1 | tee logs/baseline_gemma3_1b_it.log
 
 echo "Baseline complete. Starting SLoRA run..."
 
@@ -43,7 +45,7 @@ accelerate launch \
     --num_processes 4 \
     --mixed_precision bf16 \
     scripts/train_slora.py \
-    --config configs/quick_gemma3_1b_it.yaml
+    --config configs/quick_gemma3_1b_it.yaml 2>&1 | tee logs/quick_gemma3_1b_it.log
 
 echo "Quick test complete!"
 echo "End time: $(date)"
