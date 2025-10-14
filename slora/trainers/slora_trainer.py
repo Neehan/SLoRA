@@ -27,7 +27,6 @@ class SLoRATrainer(Trainer):
         super().__init__(*args, **kwargs)
         self.gate: Optional[HeadGradientGate] = None
         self.gate_config = gate_config
-        self._last_accept = True
 
         self.novelty_history = []
         self.accept_history = []
@@ -88,11 +87,13 @@ class SLoRATrainer(Trainer):
         inputs = self._prepare_inputs(inputs)
         labels = inputs["labels"]
 
-        with torch.no_grad():
+        with self.compute_loss_context_manager():
             outputs = model(**inputs, output_hidden_states=True, return_dict=True)
             hidden_states = outputs.hidden_states[-1]
             logits = outputs.logits
+            loss = outputs.loss
 
+        with torch.no_grad():
             z = self.gate.embed(hidden_states, logits, labels)
 
             if self.accelerator.num_processes > 1:
@@ -111,42 +112,27 @@ class SLoRATrainer(Trainer):
                 )
                 accept = bool(accept_tensor.item())
 
-        self._last_accept = accept
         self.novelty_history.append(novelty)
         self.accept_history.append(int(accept))
 
-        count_increment = 1.0 / self.accelerator.num_processes if self.accelerator.num_processes > 1 else 1.0
+        count_increment = (
+            1.0 / self.accelerator.num_processes
+            if self.accelerator.num_processes > 1
+            else 1.0
+        )
 
         if accept:
-            with self.compute_loss_context_manager():
-                outputs = model(**inputs, output_hidden_states=True, return_dict=True)
-                loss = outputs.loss
-
             if self.args.gradient_accumulation_steps > 1:
                 loss = loss / self.args.gradient_accumulation_steps
             self.accelerator.backward(loss)
             self.gate.update(z, count_increment)
             ret_loss = loss.detach()
         else:
-            self.optimizer.zero_grad(set_to_none=True)  # type: ignore
-            ret_loss = torch.tensor(0.0, device=self.accelerator.device)
+            ret_loss = loss.detach()
 
         self.gate.step(self.state.global_step, accept)
 
         return ret_loss
-
-    def optimizer_step(self, epoch: int, **kwargs):
-        """Only step if last batch was accepted."""
-        if self._last_accept:
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), self.args.max_grad_norm  # type: ignore
-            )
-            super().optimizer_step(epoch, **kwargs)  # type: ignore
-
-    def lr_scheduler_step(self, *args, **kwargs):
-        """Only step scheduler if last batch was accepted."""
-        if self._last_accept:
-            return super().lr_scheduler_step(*args, **kwargs)  # type: ignore
 
     def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
         """Add gate statistics to logs."""

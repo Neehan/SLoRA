@@ -140,7 +140,13 @@ class HeadGradientGate:
             logits_flat, k=min(self.k_topk, logits_flat.size(1) - 1), dim=1
         )
         gold = safe_labels.unsqueeze(1)
-        idx = torch.cat([topk_idx, gold], dim=1)
+
+        gold_in_topk = (topk_idx == gold).any(dim=1, keepdim=True)
+        idx = torch.where(
+            gold_in_topk.expand(-1, topk_idx.size(1) + 1),
+            torch.cat([topk_idx, topk_idx[:, :1]], dim=1),
+            torch.cat([topk_idx, gold], dim=1)
+        )
 
         sel_logits = torch.gather(logits_flat, 1, idx)
         sel_probs = torch.softmax(sel_logits, dim=1)
@@ -221,12 +227,16 @@ class HeadGradientGate:
         if global_step > self.burn_in:
             error = self.acceptance_rate_ema - self.target_accept_rate
             self.current_novelty_threshold += self.controller_lr * error
+            self.current_novelty_threshold = torch.clamp(
+                torch.tensor(self.current_novelty_threshold), min=0.0, max=1.0
+            ).item()
 
     def acceptance_rate(self, global_step: int) -> float:
         """Compute overall acceptance rate."""
-        if global_step == 0:
+        if global_step < self.burn_in:
             return 1.0
-        return self.accepted_count / global_step
+        else:
+            return self.acceptance_rate_ema
 
     def reset(self) -> None:
         """Reset gate to initial state."""
