@@ -31,7 +31,7 @@ This approach differs fundamentally from loss-based methods (e.g., Selective Bac
    - Accumulate: `z = Σ_t z_t`, then normalize `ẑ = z/|z|`
 4. **Streaming basis**: Maintain rank-k orthonormal basis `W ∈ R^{m×k}` (k=64) of accepted sketches via Frequent Directions
 5. **Novelty score**: `nov = 1 - |W^T ẑ|²` (directional redundancy, in [0,1])
-6. **Gate decision**: Accept if `nov ≥ min_novelty` AND `random() < accept_prob`
+6. **Gate decision**: Accept with probability `σ(β(nov - τ))` where τ adapts via EMA to maintain target acceptance rate
 7. **Accept**: Run backward + optimizer step, update basis `W ← FD(W, ẑ)`
 8. **Reject**: Skip backward entirely, zero grads
 9. **Burn-in**: Always accept first S steps (2k-3k) to initialize basis
@@ -147,17 +147,18 @@ from slora.gate import HeadGradientGate
 
 # Initialize gate
 gate = HeadGradientGate(
-    d_hidden=4096,    # Model hidden size
-    vocab_size=50257, # Tokenizer vocab size
-    m=512,            # TensorSketch dimension
-    k=64,             # Rank of streaming basis
-    min_novelty=0.10, # Minimum novelty threshold
-    accept_prob=0.70, # Acceptance probability for novel batches
-    burn_in=2000,     # Always accept first N steps
+    d_hidden=4096,           # Model hidden size
+    vocab_size=50257,        # Tokenizer vocab size
+    m=512,                   # TensorSketch dimension
+    k=64,                    # Rank of streaming basis
+    accept_prob=0.30,        # Target acceptance rate
+    accept_prob_scaler=10.0, # Sigmoid steepness β
+    accept_ema_rate=0.01,    # EMA learning rate for threshold adaptation
+    burn_in=2000,            # Always accept first N steps
     seed=0,
     device='cuda',
     reorth_every=128,
-    k_topk=64,        # Top-K logits for sparse sketch
+    k_topk=64,               # Top-K logits for sparse sketch
 )
 
 # Inside training loop (pre-backward gating)
@@ -192,8 +193,9 @@ from slora import SLoRATrainer
 gate_config = {
     "m": 512,
     "k": 64,
-    "min_novelty": 0.10,
-    "accept_prob": 0.70,
+    "accept_prob": 0.30,
+    "accept_prob_scaler": 10.0,
+    "accept_ema_rate": 0.01,
     "burn_in": 2000,
     "seed": 0,
     "reorth_every": 128,
@@ -233,8 +235,9 @@ All configs are in `configs/*.yaml`. Key parameters:
 - `slora.m`: TensorSketch dimension (512, must be power of 2 for FFT)
 - `slora.k`: Rank of streaming basis (64)
 - `slora.k_topk`: Top-K logits for sparse error sketch (64, 32-128 range)
-- `slora.min_novelty`: Minimum novelty threshold (0.05-0.20, default 0.10)
-- `slora.accept_prob`: Acceptance probability for novel batches (0.5-1.0, default 0.70)
+- `slora.accept_prob`: Target acceptance rate (0.2-0.4, default 0.30)
+- `slora.accept_prob_scaler`: Sigmoid steepness β (5-20, default 10.0)
+- `slora.accept_ema_rate`: EMA learning rate for threshold adaptation (0.005-0.02, default 0.01)
 - `slora.burn_in`: Steps to always accept (2000-3000)
 - `slora.reorth_every`: Re-orthonormalize sketch frequency (128)
 
@@ -248,15 +251,15 @@ All configs are in `configs/*.yaml`. Key parameters:
 ## Hyperparameter Tuning
 
 **Start with defaults:**
-- `min_novelty=0.10`, `accept_prob=0.70`, `m=512`, `k=64`, `burn_in=2000`
+- `accept_prob=0.30`, `accept_prob_scaler=10.0`, `accept_ema_rate=0.01`, `m=512`, `k=64`, `burn_in=2000`
 
-**If acceptance rate too low (<50%):**
-- Decrease `min_novelty` to 0.05
-- Increase `accept_prob` to 0.80-0.90
+**If acceptance rate doesn't converge to target:**
+- Increase `accept_ema_rate` to 0.02 (faster adaptation)
+- Decrease `accept_prob_scaler` to 5.0 (softer sigmoid)
 
-**If acceptance rate too high (>80%):**
-- Increase `min_novelty` to 0.15-0.20
-- Decrease `accept_prob` to 0.50-0.60
+**If acceptance is too noisy:**
+- Decrease `accept_ema_rate` to 0.005 (slower, more stable)
+- Increase `accept_prob_scaler` to 15-20 (sharper sigmoid)
 
 **If early instability:**
 - Increase `burn_in` to 3000-5000
@@ -306,9 +309,9 @@ Metrics logged to W&B:
 - Verify `lora.target_modules` matches model architecture
 
 **Acceptance rate = 100%:**
-- `min_novelty` too low or basis not updating
+- Basis not updating or threshold too low
 - Check `gate/novelty` is decreasing over time
-- Increase `min_novelty` or decrease `accept_prob`
+- Decrease `accept_prob` (target rate) or increase `accept_prob_scaler`
 
 **OOM errors:**
 - Reduce `per_device_train_batch_size`
@@ -348,14 +351,13 @@ Metrics logged to W&B:
 **Immediate (validation):**
 1. Baseline comparison: verify ≥30% token efficiency improvement at comparable loss
 2. Ablation studies: novelty-only vs loss-floor vs combined
-3. Hyperparameter sensitivity: min_novelty, accept_prob, k, burn_in
+3. Hyperparameter sensitivity: accept_prob, accept_prob_scaler, k, burn_in
 
 **Next steps (if validation succeeds):**
 1. Scale to 7B-13B models with QLoRA
 2. Multiple datasets: instruction tuning, domain adaptation
-3. Adaptive threshold controller for target acceptance rate
-4. Downstream evaluation: MT-Bench, AlpacaEval, MMLU
-5. Loss-floor gate for wall-clock speedup
+3. Downstream evaluation: MT-Bench, AlpacaEval, MMLU
+4. Loss-floor gate for wall-clock speedup
 
 **Out of scope (keep simple):**
 - Multi-metric scoring functions

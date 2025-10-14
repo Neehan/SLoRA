@@ -45,8 +45,9 @@ class SLoRATrainer(Trainer):
             "vocab_size": config.vocab_size,  # type: ignore
             "m": self.gate_config["m"],
             "k": self.gate_config["k"],
-            "min_novelty": self.gate_config["min_novelty"],
             "accept_prob": self.gate_config["accept_prob"],
+            "accept_prob_scaler": self.gate_config["accept_prob_scaler"],
+            "accept_ema_rate": self.gate_config["accept_ema_rate"],
             "burn_in": self.gate_config["burn_in"],
             "seed": self.gate_config["seed"],
             "device": str(device),
@@ -61,8 +62,9 @@ class SLoRATrainer(Trainer):
                 "gate/d_hidden": config.hidden_size,  # type: ignore
                 "gate/m": gate_params["m"],
                 "gate/k": gate_params["k"],
-                "gate/min_novelty": gate_params["min_novelty"],
-                "gate/accept_prob": gate_params["accept_prob"],
+                "gate/target_accept_prob": gate_params["accept_prob"],
+                "gate/accept_prob_scaler": gate_params["accept_prob_scaler"],
+                "gate/accept_ema_rate": gate_params["accept_ema_rate"],
                 "gate/burn_in": gate_params["burn_in"],
             }
         )
@@ -155,6 +157,7 @@ class SLoRATrainer(Trainer):
             logs["gate/acceptance_rate"] = self.gate.acceptance_rate()
             logs["gate/accepted_steps"] = self.gate.accepted_count
             logs["gate/total_steps"] = self.gate.step_count
+            logs["gate/current_accept_prob"] = self.gate.current_accept_prob
         super().log(logs, start_time)
 
     def _save_checkpoint(self, model, trial, metrics=None):

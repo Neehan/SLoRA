@@ -125,11 +125,11 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
             print("\n🎉 SUCCESS!")
         elif loss_diff_pct < 0.5:
             print(
-                f"\n⚠️  Loss good but rejection {rejection_rate:.1f}% < 30%. Decrease accept_prob or increase min_novelty"
+                f"\n⚠️  Loss good but rejection {rejection_rate:.1f}% < 30%. Decrease accept_prob (target rate)"
             )
         elif rejection_rate >= 30:
             print(
-                f"\n⚠️  Rejection good but loss degraded {loss_diff_pct:.2f}%. Increase accept_prob or decrease min_novelty"
+                f"\n⚠️  Rejection good but loss degraded {loss_diff_pct:.2f}%. Increase accept_prob (target rate)"
             )
         else:
             print("\n❌ Needs tuning")

@@ -39,24 +39,25 @@ class HeadGradientGate:
         vocab_size: int,
         m: int,
         k: int,
-        min_novelty: float,
         accept_prob: float,
+        accept_prob_scaler: float,
+        accept_ema_rate: float,
         burn_in: int,
         seed: int,
         device: str,
         reorth_every: int,
         k_topk: int,
     ):
-        assert 0.0 <= min_novelty <= 1.0
-        assert 0.0 <= accept_prob <= 1.0
         assert k <= m
 
         self.d_hidden = d_hidden
         self.vocab_size = vocab_size
         self.m = m
         self.k = k
-        self.min_novelty = min_novelty
-        self.accept_prob = accept_prob
+        self.target_accept_prob = accept_prob
+        self.beta = accept_prob_scaler
+        self.current_accept_prob = accept_prob
+        self.accept_ema_rate = accept_ema_rate
         self.burn_in = burn_in
         self.k_topk = k_topk
         self.device = torch.device(device)
@@ -155,24 +156,19 @@ class HeadGradientGate:
 
     def accept(self, novelty: float) -> bool:
         """
-        Decide whether to accept based on minimum novelty + probabilistic sampling.
+        Probabilistic gating with smooth sigmoid acceptance.
 
-        Accept if:
-        1. During burn-in, OR
-        2. novelty >= min_novelty AND random() < accept_prob
+        Acceptance probability: a(s) = σ(β(s - τ))
+        where s is novelty score, β controls steepness, τ is current_accept_prob threshold.
 
-        This gives two-stage gating:
-        - Quality filter: reject batches with novelty < min_novelty
-        - Rate control: among quality batches, accept with probability accept_prob
+        After burn-in, adapt current_accept_prob via EMA to maintain target_accept_prob.
         """
         if self.step_count < self.burn_in:
             return True
 
-        if novelty < self.min_novelty:
-            return False
-
+        acceptance_prob = torch.sigmoid(torch.tensor(self.beta * (novelty - self.current_accept_prob))).item()
         rand_val = torch.rand(1, generator=self.rng, device=self.device).item()
-        return rand_val < self.accept_prob
+        return rand_val < acceptance_prob
 
     def update(self, z: torch.Tensor) -> None:
         """Update streaming basis with normalized sketch."""
@@ -180,8 +176,13 @@ class HeadGradientGate:
         self.accepted_count += 1
 
     def step(self) -> None:
-        """Increment step counter."""
+        """Increment step counter and adapt current_accept_prob threshold via EMA."""
         self.step_count += 1
+
+        if self.step_count > self.burn_in:
+            current_rate = self.acceptance_rate()
+            error = self.target_accept_prob - current_rate
+            self.current_accept_prob += self.accept_ema_rate * error
 
     def acceptance_rate(self) -> float:
         """Compute overall acceptance rate."""

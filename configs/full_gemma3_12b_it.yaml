@@ -52,8 +52,9 @@ slora:
   enable: true
   m: 512
   k: 64
-  min_novelty: 0.10
-  accept_prob: 0.70
+  accept_prob: 0.30
+  accept_prob_scaler: 10.0
+  accept_ema_rate: 0.01
   burn_in: 3000
   seed: 0
   reorth_every: 128
