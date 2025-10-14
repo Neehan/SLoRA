@@ -49,7 +49,7 @@ slora:
   enable: true
   m: 512
   k: 64
-  tau_n: 0.008
+  tau_n: 0.992
   burn_in: 20
   seed: 0
   reorth_every: 12
