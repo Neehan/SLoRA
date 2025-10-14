@@ -42,16 +42,8 @@ def prepare_data(config: Dict[str, Any], tokenizer):
 
     def formatting_func(example):
         """Format example as chat template."""
-        prompt = example[config["data"]["prompt_field"]]
-        response = example[config["data"]["response_field"]]
-
-        messages = [
-            {"role": "user", "content": prompt},
-            {"role": "assistant", "content": response},
-        ]
-
         text = tokenizer.apply_chat_template(
-            messages,
+            example["messages"],
             tokenize=False,
             add_generation_prompt=False,
         )
