@@ -1,11 +1,11 @@
 # Quick test config: Gemma-3-4B on 100k Tülu-3 subset
 
 model:
-  name: google/gemma-2-2b-it  # Using gemma-2-2b-it as gemma-3-4b may not exist yet
+  name: google/gemma-3-1b-it
   use_flash_attention_2: true
 
 training:
-  output_dir: ./outputs/quick_gemma_4b
+  output_dir: ./outputs/quick_gemma3_1b_it
   num_train_epochs: 1
   max_steps: 12000
   per_device_train_batch_size: 4
@@ -65,5 +65,5 @@ data:
 logging:
   use_wandb: true
   wandb_project: slora
-  wandb_run_name: quick_gemma_4b
+  wandb_run_name: quick_gemma3_1b_it
   report_to: wandb

@@ -34,13 +34,13 @@ accelerate launch \
     --num_processes 2 \
     --mixed_precision bf16 \
     scripts/train_slora.py \
-    --config configs/quick_gemma3_4b.yaml
+    --config configs/quick_gemma3_1b_it.yaml
 
 echo "Quick test complete!"
 echo "End time: $(date)"
 echo
 echo "Compare results:"
-echo "  - Baseline: outputs/baseline_gemma_4b"
-echo "  - SLoRA:    outputs/quick_gemma_4b"
+echo "  - Baseline: outputs/baseline_gemma3_1b_it"
+echo "  - SLoRA:    outputs/quick_gemma3_1b_it"
 echo
 echo "Check W&B project 'slora' for metrics comparison"

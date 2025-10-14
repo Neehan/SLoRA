@@ -34,7 +34,7 @@ SLoRA/
 │   │   └── slora_trainer.py    # HF Trainer subclass
 │   └── utils/                  # logging, seeding, timing
 ├── configs/
-│   ├── quick_gemma3_4b.yaml    # Quick test (100k samples, 48h)
+│   ├── quick_gemma3_1b.yaml    # Quick test (100k samples, 48h)
 │   ├── full_gemma3_12b.yaml    # Full run (400k samples, QLoRA)
 │   ├── baseline.yaml           # Baseline LoRA (no gating)
 │   └── accelerate_config.yaml  # Multi-GPU config
@@ -92,7 +92,7 @@ accelerate launch --config_file configs/accelerate_config.yaml \
 
 accelerate launch --config_file configs/accelerate_config.yaml \
     scripts/train_slora.py \
-    --config configs/quick_gemma3_4b.yaml
+    --config configs/quick_gemma3_1b.yaml
 ```
 
 **Pass criteria:** SLoRA validation loss ≤ +0.5% of baseline at ≥30% fewer accepted steps.
@@ -186,7 +186,7 @@ trainer.train()
 All configs are in `configs/*.yaml`. Key parameters:
 
 ### Model
-- `model.name`: HF model ID (e.g., `google/gemma-2-2b-it`)
+- `model.name`: HF model ID (e.g., `google/gemma-3-1b-it`)
 - `model.load_in_4bit`: Enable QLoRA (4-bit quantization)
 - `model.use_flash_attention_2`: Use Flash Attention 2
 

@@ -8,7 +8,7 @@
 
 set -e
 
-echo "=== SLoRA Full Experiment (Gemma-12B, 400k samples) ==="
+echo "=== SLoRA Full Experiment (Gemma-3-12B-it, 400k samples) ==="
 echo "Starting time: $(date)"
 
 cd "$(dirname "$0")/.."
@@ -22,8 +22,8 @@ export WANDB_PROJECT="slora"
 echo "Starting full SLoRA run..."
 accelerate launch --config_file configs/accelerate_config.yaml \
     scripts/train_slora.py \
-    --config configs/full_gemma3_12b.yaml
+    --config configs/full_gemma3_12b_it.yaml
 
 echo "Full experiment complete!"
 echo "End time: $(date)"
-echo "Results: outputs/full_gemma_12b"
+echo "Results: outputs/full_gemma3_12b_it"

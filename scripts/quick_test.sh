@@ -32,13 +32,13 @@ echo "Baseline complete. Starting SLoRA run..."
 
 accelerate launch --config_file configs/accelerate_config.yaml \
     scripts/train_slora.py \
-    --config configs/quick_gemma3_4b.yaml
+    --config configs/quick_gemma3_4b_it.yaml
 
 echo "Quick test complete!"
 echo "End time: $(date)"
 echo ""
 echo "Compare results:"
-echo "  - Baseline: outputs/baseline_gemma_4b"
-echo "  - SLoRA:    outputs/quick_gemma_4b"
+echo "  - Baseline: outputs/baseline_gemma_1b_it"
+echo "  - SLoRA:    outputs/quick_gemma_1b_it"
 echo ""
 echo "Check W&B project 'slora' for metrics comparison"
