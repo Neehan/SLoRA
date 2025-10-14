@@ -1,0 +1,23 @@
+name: slora
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pytorch::pytorch>=2.1.0
+  - pytorch::torchvision
+  - pytorch::torchaudio
+  - nvidia::cuda-toolkit=12.1
+  - pip:
+    - transformers>=4.40.0
+    - accelerate>=0.27.0
+    - peft>=0.10.0
+    - datasets>=2.18.0
+    - bitsandbytes>=0.43.0
+    - scipy>=1.11.0
+    - pyyaml>=6.0
+    - wandb>=0.16.0
+    - tqdm>=4.66.0

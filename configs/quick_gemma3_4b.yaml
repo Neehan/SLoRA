@@ -1,0 +1,69 @@
+# Quick test config: Gemma-3-4B on 100k Tülu-3 subset
+
+model:
+  name: google/gemma-2-2b-it  # Using gemma-2-2b-it as gemma-3-4b may not exist yet
+  use_flash_attention_2: true
+
+training:
+  output_dir: ./outputs/quick_gemma_4b
+  num_train_epochs: 1
+  max_steps: 12000
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 16
+  gradient_checkpointing: true
+  learning_rate: 2.0e-5
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.03
+  weight_decay: 0.01
+  bf16: true
+  tf32: true
+  max_grad_norm: 1.0
+  logging_steps: 10
+  save_strategy: steps
+  save_steps: 2000
+  save_total_limit: 3
+  evaluation_strategy: steps
+  eval_steps: 500
+  load_best_model_at_end: false
+  seed: 42
+  dataloader_num_workers: 4
+  dataloader_pin_memory: true
+  remove_unused_columns: false
+
+lora:
+  r: 8
+  lora_alpha: 16
+  lora_dropout: 0.0
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  bias: none
+  task_type: CAUSAL_LM
+
+slora:
+  enable: true
+  m: 512
+  k: 64
+  tau_n: 0.30
+  burn_in: 2000
+  seed: 0
+  reorth_every: 128
+
+data:
+  dataset_name: ai2-tulu/tulu-3-sft-mixture
+  train_split: "train[:100000]"
+  eval_split: "train[100000:110000]"
+  max_seq_length: 2048
+  prompt_field: prompt
+  response_field: response
+
+logging:
+  use_wandb: true
+  wandb_project: slora
+  wandb_run_name: quick_gemma_4b
+  report_to: wandb
