@@ -54,18 +54,18 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
         except Exception:
             return {"text": None}
 
-    dataset_orig_size = len(dataset)
+    dataset_orig_size = len(dataset)  # type: ignore
     dataset = dataset.map(formatting_func)
     dataset = dataset.filter(lambda x: x["text"] is not None)
     logger.info(
-        f"Train dataset: kept {len(dataset)}/{dataset_orig_size} examples (skipped {dataset_orig_size - len(dataset)})"
+        f"Train dataset: kept {len(dataset)}/{dataset_orig_size} examples (skipped {dataset_orig_size - len(dataset)})"  # type: ignore
     )
 
-    eval_orig_size = len(eval_dataset)
+    eval_orig_size = len(eval_dataset)  # type: ignore
     eval_dataset = eval_dataset.map(formatting_func)
     eval_dataset = eval_dataset.filter(lambda x: x["text"] is not None)
     logger.info(
-        f"Eval dataset: kept {len(eval_dataset)}/{eval_orig_size} examples (skipped {eval_orig_size - len(eval_dataset)})"
+        f"Eval dataset: kept {len(eval_dataset)}/{eval_orig_size} examples (skipped {eval_orig_size - len(eval_dataset)})"  # type: ignore
     )
 
     def tokenize_func(examples):
@@ -204,8 +204,8 @@ def main():
         ddp_find_unused_parameters=False,
     )
 
-    gate_config = None
     enable_gate = config["slora"].get("enable", True)
+    gate_config = None
     if enable_gate:
         gate_config = {
             "m": config["slora"]["m"],
@@ -214,6 +214,7 @@ def main():
             "burn_in": config["slora"]["burn_in"],
             "seed": config["slora"]["seed"],
             "reorth_every": config["slora"]["reorth_every"],
+            "k_topk": config["slora"]["k_topk"],
         }
 
     data_collator = DataCollatorForLanguageModeling(
@@ -228,7 +229,6 @@ def main():
         processing_class=tokenizer,
         data_collator=data_collator,
         gate_config=gate_config,
-        enable_gate=enable_gate,
     )
 
     logger.info("Starting training")
@@ -238,7 +238,7 @@ def main():
     trainer.save_model()
     tokenizer.save_pretrained(config["training"]["output_dir"])
 
-    if enable_gate and trainer.gate is not None:
+    if trainer.gate is not None:
         logger.info(f"Final acceptance rate: {trainer.gate.acceptance_rate():.4f}")
         logger.info(
             f"Total accepted steps: {trainer.gate.accepted_count}/{trainer.gate.step_count}"

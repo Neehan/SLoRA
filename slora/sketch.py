@@ -53,7 +53,6 @@ class FrequentDirections:
         self.W = torch.empty(m, 0, dtype=dtype, device=device)
         self.update_count = 0
 
-    @torch.no_grad()
     def update(self, z: torch.Tensor) -> None:
         """
         Add unit vector z ∈ R^m to sketch and shrink to rank k via Frequent Directions.
@@ -90,19 +89,14 @@ class FrequentDirections:
             # Compute SVD of current matrix
             U, S, Vt = torch.linalg.svd(self.W, full_matrices=False)
 
-            # Shrink: subtract (k+1)-th squared singular value from all
-            delta = S[self.k] ** 2  # σₖ₊₁²
-            S_new = torch.sqrt(torch.clamp(S[:self.k] ** 2 - delta, min=0.0))
-
-            # Reconstruct with top k vectors and shrunk singular values
-            self.W = U[:, :self.k] * S_new.unsqueeze(0)  # (m, k) * (1, k) = (m, k)
+            # Keep orthonormal basis (drop scaling for novelty computation)
+            self.W = U[:, :self.k]
 
         # Step 3: Periodic re-orthonormalization for numerical stability
         self.update_count += 1
         if self.update_count % self.reorth_every == 0:
             self._reorthonormalize()
 
-    @torch.no_grad()
     def _reorthonormalize(self) -> None:
         """
         Re-orthonormalize W via QR decomposition for numerical stability.

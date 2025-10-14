@@ -1,65 +1,48 @@
 import torch
 from transformers import Trainer
 from typing import Optional, Dict, Any
-from slora.gate import SubspaceGate
+from slora.gate import HeadGradientGate
 import json
 from pathlib import Path
 
 
 class SLoRATrainer(Trainer):
     """
-    HuggingFace Trainer subclass with Subspace-Gated Updates.
+    HuggingFace Trainer with head-gradient proxy gating.
 
-    Overrides training_step to:
-    1. Compute loss and backward pass
-    2. Extract LoRA gradients
-    3. Gate optimizer step based on gradient novelty
-    4. Update subspace sketch only on accepted steps
+    Gates BEFORE backward pass using only forward quantities:
+    - hidden_states (pre-head activations)
+    - logits (classifier outputs)
+    - labels (target tokens)
+
+    Skips backward pass entirely on redundant batches.
     """
 
     def __init__(
         self,
-        gate_config: Optional[Dict[str, Any]] = None,
-        enable_gate: bool = True,
+        gate_config: Optional[Dict[str, Any]],
         *args,
         **kwargs,
     ):
-        """
-        Args:
-            gate_config: Dict with keys {m, k, tau_n, burn_in, seed, reorth_every}
-            enable_gate: If False, behaves like standard Trainer (for baseline)
-            *args, **kwargs: Passed to Trainer.__init__
-        """
         super().__init__(*args, **kwargs)
-        self.enable_gate = enable_gate
-        self.gate = None
-        self.gate_config = gate_config or {}
+        self.gate: Optional[HeadGradientGate] = None
+        self.gate_config = gate_config
         self._last_accept = True
-        self._cached_lora_params = []
 
         self.novelty_history = []
         self.accept_history = []
 
     def _initialize_gate(self) -> None:
-        """Initialize gate after model is set up (called on first training step)."""
-        if self.gate is not None:
+        """Initialize gate after model is set up."""
+        if self.gate is not None or self.gate_config is None:
             return
 
-        assert self.model is not None, "Model not initialized"
-
-        # Cache LoRA params once for consistency
-        self._cached_lora_params = [
-            (n, p)
-            for n, p in self.model.named_parameters()
-            if p.requires_grad
-            and ("lora_" in n.lower() or "lora_a" in n.lower() or "lora_b" in n.lower())
-        ]
-
-        d_lora = sum(p.numel() for _, p in self._cached_lora_params)
-        device = next(self.model.parameters()).device
+        device = next(self.model.parameters()).device  # type: ignore
+        config = self.model.config  # type: ignore
 
         gate_params = {
-            "d_lora": d_lora,
+            "d_hidden": config.hidden_size,  # type: ignore
+            "vocab_size": config.vocab_size,  # type: ignore
             "m": self.gate_config["m"],
             "k": self.gate_config["k"],
             "tau_n": self.gate_config["tau_n"],
@@ -67,13 +50,14 @@ class SLoRATrainer(Trainer):
             "seed": self.gate_config["seed"],
             "device": str(device),
             "reorth_every": self.gate_config["reorth_every"],
+            "k_topk": self.gate_config["k_topk"],
         }
 
-        self.gate = SubspaceGate(**gate_params)
+        self.gate = HeadGradientGate(**gate_params)
 
-        self.log(
+        self.log(  # type: ignore
             {
-                "gate/d_lora": d_lora,
+                "gate/d_hidden": config.hidden_size,  # type: ignore
                 "gate/m": gate_params["m"],
                 "gate/k": gate_params["k"],
                 "gate/tau_n": gate_params["tau_n"],
@@ -88,93 +72,98 @@ class SLoRATrainer(Trainer):
         num_items_in_batch: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
-        Override training step to only compute loss and backward (no stepping).
-        Gating logic moved to optimizer_step.
+        Override training step to gate before backward.
         """
-        if self.enable_gate and self.gate is None:
+        if self.gate_config is not None and self.gate is None:
             self._initialize_gate()
+
+        if self.gate is None:
+            return super().training_step(model, inputs, num_items_in_batch)
 
         model.train()
         inputs = self._prepare_inputs(inputs)
+        labels = inputs["labels"]
 
-        with self.compute_loss_context_manager():
-            loss = self.compute_loss(model, inputs)
+        with torch.no_grad():
+            outputs = model(**inputs, output_hidden_states=True, return_dict=True)
+            hidden_states = outputs.hidden_states[-1]
+            logits = outputs.logits
 
-        if self.args.gradient_accumulation_steps > 1:
-            loss = loss / self.args.gradient_accumulation_steps
+            z = self.gate.embed(hidden_states, logits, labels)
 
-        self.accelerator.backward(loss)
-        return loss.detach()
+            if self.accelerator.num_processes > 1:
+                torch.distributed.all_reduce(z, op=torch.distributed.ReduceOp.SUM)
+                z = z / self.accelerator.num_processes
 
-    def _get_lora_grad_vec(self) -> torch.Tensor:
-        """Extract flattened gradient vector from cached LoRA parameters."""
-        grads = [
-            p.grad.view(-1) for _, p in self._cached_lora_params if p.grad is not None
-        ]
-        assert len(grads) > 0, "No LoRA gradients found"
-        return torch.cat(grads)
+            novelty = self.gate.novelty(z)
+            accept = self.gate.accept(novelty)
 
-    def optimizer_step(self, epoch: int, **kwargs):
-        """Override to gate optimizer updates based on gradient novelty."""
-        if not self.enable_gate:
-            return super().optimizer_step(epoch, **kwargs)
-
-        if self.gate is None:
-            self._initialize_gate()
-
-        g_vec = self._get_lora_grad_vec()
-        z = self.gate.embed(g_vec)
-        novelty = self.gate.novelty(z)
-        accept = self.gate.accept(novelty)
+            if self.accelerator.num_processes > 1:
+                accept_tensor = torch.tensor(
+                    [int(accept)], device=self.accelerator.device
+                )
+                torch.distributed.all_reduce(
+                    accept_tensor, op=torch.distributed.ReduceOp.MIN
+                )
+                accept = bool(accept_tensor.item())
 
         self._last_accept = accept
         self.novelty_history.append(novelty)
         self.accept_history.append(int(accept))
 
+        if accept:
+            with self.compute_loss_context_manager():
+                outputs = model(**inputs, output_hidden_states=True, return_dict=True)
+                loss = outputs.loss
+
+            if self.args.gradient_accumulation_steps > 1:
+                loss = loss / self.args.gradient_accumulation_steps
+            self.accelerator.backward(loss)
+            self.gate.update(z)
+            ret_loss = loss.detach()
+        else:
+            self.optimizer.zero_grad(set_to_none=True)  # type: ignore
+            ret_loss = torch.tensor(0.0, device=self.accelerator.device)
+
         self.gate.step()
 
-        if accept:
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), self.args.max_grad_norm
-            )
-            super().optimizer_step(epoch, **kwargs)
-            self.gate.update(z)
-        else:
-            self.optimizer.zero_grad(set_to_none=True)
+        return ret_loss
 
-        if (self.gate.step_count % self.args.logging_steps) == 0:
-            avg_novelty = sum(self.novelty_history) / len(self.novelty_history) if self.novelty_history else 0.0
-            self.log(
-                {
-                    "gate/novelty": novelty,
-                    "gate/novelty_avg": avg_novelty,
-                    "gate/accept": int(accept),
-                    "gate/acceptance_rate": self.gate.acceptance_rate(),
-                    "gate/accepted_steps": self.gate.accepted_count,
-                    "gate/total_steps": self.gate.step_count,
-                }
+    def optimizer_step(self, epoch: int, **kwargs):
+        """Only step if last batch was accepted."""
+        if self._last_accept:
+            torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.args.max_grad_norm  # type: ignore
             )
+            super().optimizer_step(epoch, **kwargs)  # type: ignore
 
     def lr_scheduler_step(self, *args, **kwargs):
-        """Keep scheduler in lockstep with optimizer."""
-        if not self.enable_gate or self._last_accept:
-            return super().lr_scheduler_step(*args, **kwargs)
+        """Only step scheduler if last batch was accepted."""
+        if self._last_accept:
+            return super().lr_scheduler_step(*args, **kwargs)  # type: ignore
 
     def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
-        """Override log to add gate statistics."""
-        if self.enable_gate and self.gate is not None:
-            logs["gate/acceptance_rate_overall"] = self.gate.acceptance_rate()
-            logs["gate/accepted_steps_total"] = self.gate.accepted_count
+        """Add gate statistics to logs."""
+        if self.gate is not None:
+            avg_novelty = sum(self.novelty_history) / len(self.novelty_history) if self.novelty_history else 0.0
+            logs["gate/novelty"] = self.novelty_history[-1] if self.novelty_history else 0.0
+            logs["gate/novelty_avg"] = avg_novelty
+            logs["gate/accept"] = self.accept_history[-1] if self.accept_history else 1
+            logs["gate/acceptance_rate"] = self.gate.acceptance_rate()
+            logs["gate/accepted_steps"] = self.gate.accepted_count
             logs["gate/total_steps"] = self.gate.step_count
         super().log(logs, start_time)
 
     def _save_checkpoint(self, model, trial, metrics=None):
-        """Override to save gate metrics in checkpoint."""
+        """Save gate metrics in checkpoint."""
         checkpoint_folder = super()._save_checkpoint(model, trial)
 
-        if self.enable_gate and self.gate is not None and checkpoint_folder is not None:
-
-            avg_novelty = sum(self.novelty_history) / len(self.novelty_history) if self.novelty_history else 0.0
+        if self.gate is not None and checkpoint_folder is not None:
+            avg_novelty = (
+                sum(self.novelty_history) / len(self.novelty_history)
+                if self.novelty_history
+                else 0.0
+            )
             gate_metrics = {
                 "acceptance_rate": self.gate.acceptance_rate(),
                 "accepted_steps": self.gate.accepted_count,

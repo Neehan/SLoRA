@@ -20,15 +20,25 @@ This approach differs fundamentally from loss-based methods (e.g., Selective Bac
 
 ## Algorithm
 
-**One metric, one threshold:**
+**Head-gradient proxy gating (gates BEFORE backward):**
 
-1. **Random projection**: Compress LoRA gradient `g ∈ R^d` → `z = R^T g ∈ R^m` using fixed random signs `R ∈ {±1}^{d×m}` (m=512)
-2. **Streaming basis**: Maintain rank-k orthonormal basis `W ∈ R^{m×k}` (k=64) of accepted gradients via Frequent Directions
-3. **Novelty score**: `nov = 1 - |W^T ẑ|²` where `ẑ = z/|z|` (directional, in [0,1])
-4. **Gate**: Accept update if `nov ≥ tau_n` (default 0.30)
-5. **Burn-in**: Always accept first S steps (2k-3k) to initialize basis
+1. **Forward pass**: Collect hidden states `h_t ∈ R^H` (pre-classifier) and logits `p_t ∈ R^V` for each token
+2. **Error vector**: Compute `e_t = softmax(p_t) - y_t` (one-hot label), sparsified to top-K logits + gold (K=64)
+3. **TensorSketch**: For each token, sketch outer product `h_t ⊗ e_t` via:
+   - CountSketch `h_t` → `s_h ∈ R^m`
+   - CountSketch `e_t` → `s_e ∈ R^m`
+   - Convolve via FFT: `z_t = IFFT(FFT(s_h) ⊙ FFT(s_e))`
+   - Accumulate: `z = Σ_t z_t`, then normalize `ẑ = z/|z|`
+4. **Streaming basis**: Maintain rank-k orthonormal basis `W ∈ R^{m×k}` (k=64) of accepted sketches via Frequent Directions
+5. **Novelty score**: `nov = 1 - |W^T ẑ|²` (directional redundancy, in [0,1])
+6. **Gate decision**: Accept if `nov ≥ tau_n` (default 0.30)
+7. **Accept**: Run backward + optimizer step, update basis `W ← FD(W, ẑ)`
+8. **Reject**: Skip backward entirely, zero grads
+9. **Burn-in**: Always accept first S steps (2k-3k) to initialize basis
 
-**Key insight:** Two batches with identical loss can have different novelty—one may be redundant (in-span of prior gradients) while the other explores new directions.
+**Key advantage:** Skips backward pass on redundant batches using only forward quantities (h, p, y). Cost: O(B·T·(H + K + m log m)) vs O(B·T·H·V) for full head gradient.
+
+**Intuition:** Head gradient `∇_W L = Σ h ⊗ e` captures error-weighted activations. Its subspace novelty correlates with full-network gradient novelty well enough to filter obvious redundancies pre-backward.
 
 ---
 
@@ -37,11 +47,10 @@ This approach differs fundamentally from loss-based methods (e.g., Selective Bac
 ```
 SLoRA/
 ├── slora/                      # Python package
-│   ├── gate.py                 # SubspaceGate class
+│   ├── gate.py                 # HeadGradientGate (TensorSketch + FD)
 │   ├── sketch.py               # FrequentDirections streaming sketch
-│   ├── hooks.py                # LoRA gradient extraction
 │   ├── trainers/
-│   │   └── slora_trainer.py    # HF Trainer subclass
+│   │   └── slora_trainer.py    # HF Trainer with pre-backward gating
 │   └── utils/                  # logging, seeding, timing
 ├── configs/
 │   ├── quick_gemma3_1b.yaml    # Quick test (100k samples, 48h)
@@ -134,31 +143,43 @@ sbatch scripts/full_gemma_12b.sh
 ### Drop-in API (minimal)
 
 ```python
-from slora import SubspaceGate
-from slora.hooks import lora_grad_vec
+from slora.gate import HeadGradientGate
 
 # Initialize gate
-gate = SubspaceGate(
-    d_lora=1024,      # Flattened LoRA param dimension
-    m=512,            # Random projection dimension
+gate = HeadGradientGate(
+    d_hidden=4096,    # Model hidden size
+    vocab_size=50257, # Tokenizer vocab size
+    m=512,            # TensorSketch dimension
     k=64,             # Rank of streaming basis
     tau_n=0.30,       # Novelty threshold
     burn_in=2000,     # Always accept first N steps
     seed=0,
+    device='cuda',
+    reorth_every=128,
+    k_topk=64,        # Top-K logits for sparse sketch
 )
 
-# Inside training loop
-loss.backward()
-g = lora_grad_vec(model)  # Extract flattened LoRA grads
+# Inside training loop (pre-backward gating)
+with torch.no_grad():
+    outputs = model(**inputs, output_hidden_states=True)
+    h = outputs.hidden_states[-1]  # (B, T, H)
+    logits = outputs.logits         # (B, T, V)
+    labels = inputs['labels']       # (B, T)
 
-if gate.accept(g):
+    z = gate.embed(h, logits, labels)
+    novelty = gate.novelty(z)
+    accept = gate.accept(novelty)
+
+if accept:
+    outputs = model(**inputs)  # Re-run forward with grad
+    loss = outputs.loss
+    loss.backward()
     optimizer.step()
-    gate.update(g)
+    gate.update(z)
 
 optimizer.zero_grad()
 gate.step()
 
-# Monitor
 print(f"Acceptance rate: {gate.acceptance_rate():.2%}")
 ```
 
@@ -174,6 +195,7 @@ gate_config = {
     "burn_in": 2000,
     "seed": 0,
     "reorth_every": 128,
+    "k_topk": 64,
 }
 
 trainer = SLoRATrainer(
@@ -183,7 +205,6 @@ trainer = SLoRATrainer(
     eval_dataset=eval_dataset,
     tokenizer=tokenizer,
     gate_config=gate_config,
-    enable_gate=True,  # Set False for baseline
 )
 
 trainer.train()
@@ -207,8 +228,9 @@ All configs are in `configs/*.yaml`. Key parameters:
 
 ### SLoRA Gate
 - `slora.enable`: Enable/disable gating (baseline if False)
-- `slora.m`: Random projection dimension (512)
+- `slora.m`: TensorSketch dimension (512, must be power of 2 for FFT)
 - `slora.k`: Rank of streaming basis (64)
+- `slora.k_topk`: Top-K logits for sparse error sketch (64, 32-128 range)
 - `slora.tau_n`: Novelty threshold (0.20-0.50, default 0.30)
 - `slora.burn_in`: Steps to always accept (2000-3000)
 - `slora.reorth_every`: Re-orthonormalize sketch frequency (128)
@@ -300,18 +322,20 @@ Metrics logged to W&B:
 ## Computational Complexity
 
 **Per-step overhead:**
-- Random projection: O(d × m) = O(d × 512)
-- Novelty computation: O(m × k) = O(512 × 64) ≈ 32k FLOPs
-- Sketch update: O(m² × k) amortized over k steps
+- CountSketch h and e: O(B·T·(H + K)) where K=k_topk (top-K logits)
+- FFT convolution: O(B·T·m log m) = O(B·T·512·9) ≈ 4.6k FLOPs per token
+- Novelty computation: O(m·k) = O(512·64) ≈ 32k FLOPs per batch
+- Sketch update (accepted only): O(m²·k) amortized
 
-**Total:** Negligible compared to backpropagation (<<0.1% training time)
+**Total gating overhead:** ~5k FLOPs per token (<<0.5% of forward pass)
 
-**Memory:** O(m × k) = 512 × 64 × 4 bytes = 128KB (trivial)
+**Memory:** O(m·k) = 512·64·4 bytes = 128KB (trivial)
 
 **Efficiency gains:**
-1. Fewer optimizer steps → reduced momentum/Adam state updates
-2. Token efficiency → same performance with less data
-3. Optional loss-floor gate can skip backward pass entirely (future work)
+1. **Backward skip:** Rejected batches avoid full backward pass (main win)
+2. **Fewer optimizer steps:** Reduced momentum/Adam state updates
+3. **Token efficiency:** Same performance with less data
+4. **Sparse error sketch:** O(B·T·K) vs O(B·T·V) for full softmax (K=64 vs V=50k+)
 
 ---
 
@@ -341,7 +365,7 @@ Metrics logged to W&B:
 ```bibtex
 @misc{slora2024,
   title={SLoRA: Subspace-Gated LoRA for Token-Efficient Fine-Tuning},
-  author={},
+  author={Adib Hasan},
   year={2024},
 }
 ```
