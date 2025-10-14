@@ -126,9 +126,9 @@ class SLoRATrainer(Trainer):
                 loss = loss / self.args.gradient_accumulation_steps
             self.accelerator.backward(loss)
             self.gate.update(z, count_increment)
-            ret_loss = loss.detach() / self.accelerator.num_processes
+            ret_loss = loss.detach()
         else:
-            ret_loss = torch.tensor(0.0, device=loss.device)
+            ret_loss = torch.tensor(0.0, device=self.accelerator.device)
 
         self.gate.step(self.state.global_step, accept)
 
