@@ -130,6 +130,7 @@ class HeadGradientGate:
         z_norm = z.norm()
 
         if z_norm < 1e-8:
+            print(f"[DEBUG] All-zero sketch: valid_mask.sum()={valid_mask.sum().item()}/{N}, s_h norm={s_h.norm().item():.6f}, s_e norm={s_e.norm().item():.6f}")
             return torch.zeros(self.m, dtype=torch.float32, device=z.device)
 
         return z / z_norm
