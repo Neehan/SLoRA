@@ -155,7 +155,7 @@ def main():
     if config["model"].get("load_in_4bit", False):
         model = prepare_model_for_kbit_training(model)
 
-    lora_config = LoraConfig(
+    lora_config = LoraConfig(  # type: ignore
         r=config["lora"]["r"],
         lora_alpha=config["lora"]["lora_alpha"],
         lora_dropout=config["lora"]["lora_dropout"],
