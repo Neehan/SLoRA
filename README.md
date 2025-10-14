@@ -204,7 +204,7 @@ All configs are in `configs/*.yaml`. Key parameters:
 - `slora.reorth_every`: Re-orthonormalize sketch frequency (128)
 
 ### Data
-- `data.dataset_name`: HF dataset (e.g., `ai2-tulu/tulu-3-sft-mixture`)
+- `data.dataset_name`: HF dataset (e.g., `allenai/tulu-3-sft-mixture`)
 - `data.train_split`: Training split with slice (e.g., `train[:100000]`)
 - `data.max_seq_length`: Max sequence length (2048-4096)
 

@@ -140,7 +140,7 @@ def main():
 
     model = AutoModelForCausalLM.from_pretrained(
         config["model"]["name"],
-        torch_dtype=torch.bfloat16 if config["training"]["bf16"] else torch.float16,
+        dtype=torch.bfloat16 if config["training"]["bf16"] else torch.float16,
         **model_kwargs,
     )
 
@@ -207,7 +207,9 @@ def main():
             "reorth_every": config["slora"]["reorth_every"],
         }
 
-    data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False, pad_to_multiple_of=8)
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer, mlm=False, pad_to_multiple_of=8
+    )
 
     trainer = SLoRATrainer(
         model=model,

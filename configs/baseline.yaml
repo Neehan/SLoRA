@@ -49,7 +49,7 @@ slora:
   enable: false # Disable gating for baseline
 
 data:
-  dataset_name: ai2-tulu/tulu-3-sft-mixture
+  dataset_name: allenai/tulu-3-sft-mixture
   train_split: "train[:100000]"
   eval_split: "train[100000:110000]"
   max_seq_length: 2048
