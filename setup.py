@@ -19,5 +19,6 @@ setup(
         "pyyaml>=6.0",
         "wandb>=0.16.0",
         "tqdm>=4.66.0",
+        "flash-attn>=2.4.0",
     ],
 )
