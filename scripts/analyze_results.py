@@ -66,6 +66,7 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
     gate_file = slora_path / "gate_metrics.json"
     gate_entries = [e for e in slora_state["log_history"] if "gate/acceptance_rate_overall" in e]
 
+    acc_rate = None
     if gate_file.exists():
         with open(gate_file) as f:
             gate_data = json.load(f)
