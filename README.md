@@ -31,7 +31,7 @@ This approach differs fundamentally from loss-based methods (e.g., Selective Bac
    - Accumulate: `z = Σ_t z_t`, then normalize `ẑ = z/|z|`
 4. **Streaming basis**: Maintain rank-k orthonormal basis `W ∈ R^{m×k}` (k=64) of accepted sketches via Frequent Directions
 5. **Novelty score**: `nov = 1 - |W^T ẑ|²` (directional redundancy, in [0,1])
-6. **Gate decision**: Accept if `nov ≥ tau_n` (default 0.30)
+6. **Gate decision**: Accept if `nov ≥ min_novelty` AND `random() < accept_prob`
 7. **Accept**: Run backward + optimizer step, update basis `W ← FD(W, ẑ)`
 8. **Reject**: Skip backward entirely, zero grads
 9. **Burn-in**: Always accept first S steps (2k-3k) to initialize basis
@@ -151,7 +151,8 @@ gate = HeadGradientGate(
     vocab_size=50257, # Tokenizer vocab size
     m=512,            # TensorSketch dimension
     k=64,             # Rank of streaming basis
-    tau_n=0.30,       # Novelty threshold
+    min_novelty=0.10, # Minimum novelty threshold
+    accept_prob=0.70, # Acceptance probability for novel batches
     burn_in=2000,     # Always accept first N steps
     seed=0,
     device='cuda',
@@ -191,7 +192,8 @@ from slora import SLoRATrainer
 gate_config = {
     "m": 512,
     "k": 64,
-    "tau_n": 0.30,
+    "min_novelty": 0.10,
+    "accept_prob": 0.70,
     "burn_in": 2000,
     "seed": 0,
     "reorth_every": 128,
@@ -231,7 +233,8 @@ All configs are in `configs/*.yaml`. Key parameters:
 - `slora.m`: TensorSketch dimension (512, must be power of 2 for FFT)
 - `slora.k`: Rank of streaming basis (64)
 - `slora.k_topk`: Top-K logits for sparse error sketch (64, 32-128 range)
-- `slora.tau_n`: Novelty threshold (0.20-0.50, default 0.30)
+- `slora.min_novelty`: Minimum novelty threshold (0.05-0.20, default 0.10)
+- `slora.accept_prob`: Acceptance probability for novel batches (0.5-1.0, default 0.70)
 - `slora.burn_in`: Steps to always accept (2000-3000)
 - `slora.reorth_every`: Re-orthonormalize sketch frequency (128)
 
@@ -245,14 +248,15 @@ All configs are in `configs/*.yaml`. Key parameters:
 ## Hyperparameter Tuning
 
 **Start with defaults:**
-- `tau_n=0.30`, `m=512`, `k=64`, `burn_in=2000`
+- `min_novelty=0.10`, `accept_prob=0.70`, `m=512`, `k=64`, `burn_in=2000`
 
-**If acceptance rate too low (<30%):**
-- Decrease `tau_n` to 0.20-0.25
-- Increase `k` to 96
+**If acceptance rate too low (<50%):**
+- Decrease `min_novelty` to 0.05
+- Increase `accept_prob` to 0.80-0.90
 
-**If acceptance rate too high (>70%):**
-- Increase `tau_n` to 0.35-0.50
+**If acceptance rate too high (>80%):**
+- Increase `min_novelty` to 0.15-0.20
+- Decrease `accept_prob` to 0.50-0.60
 
 **If early instability:**
 - Increase `burn_in` to 3000-5000
@@ -302,9 +306,9 @@ Metrics logged to W&B:
 - Verify `lora.target_modules` matches model architecture
 
 **Acceptance rate = 100%:**
-- `tau_n` too low or basis not updating
+- `min_novelty` too low or basis not updating
 - Check `gate/novelty` is decreasing over time
-- Increase `tau_n` or check for NaN gradients
+- Increase `min_novelty` or decrease `accept_prob`
 
 **OOM errors:**
 - Reduce `per_device_train_batch_size`
@@ -344,7 +348,7 @@ Metrics logged to W&B:
 **Immediate (validation):**
 1. Baseline comparison: verify ≥30% token efficiency improvement at comparable loss
 2. Ablation studies: novelty-only vs loss-floor vs combined
-3. Hyperparameter sensitivity: tau_n, k, burn_in
+3. Hyperparameter sensitivity: min_novelty, accept_prob, k, burn_in
 
 **Next steps (if validation succeeds):**
 1. Scale to 7B-13B models with QLoRA

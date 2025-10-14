@@ -210,7 +210,8 @@ def main():
         gate_config = {
             "m": config["slora"]["m"],
             "k": config["slora"]["k"],
-            "tau_n": config["slora"]["tau_n"],
+            "min_novelty": config["slora"]["min_novelty"],
+            "accept_prob": config["slora"]["accept_prob"],
             "burn_in": config["slora"]["burn_in"],
             "seed": config["slora"]["seed"],
             "reorth_every": config["slora"]["reorth_every"],
