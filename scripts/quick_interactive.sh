@@ -20,13 +20,13 @@ export TRANSFORMERS_ATTENTION_BACKEND=SDPA
 export FLASH_ATTENTION_SKIP=True
 
 # --- Baseline run ---
-echo "Running baseline LoRA..."
-accelerate launch \
-    --config_file configs/accelerate_config.yaml \
-    --num_processes 2 \
-    --mixed_precision bf16 \
-    scripts/train_slora.py \
-    --config configs/baseline.yaml
+# echo "Running baseline LoRA..."
+# accelerate launch \
+#     --config_file configs/accelerate_config.yaml \
+#     --num_processes 2 \
+#     --mixed_precision bf16 \
+#     scripts/train_slora.py \
+#     --config configs/baseline.yaml
 
 # --- SLoRA run ---
 echo "Baseline complete. Starting SLoRA run..."

@@ -90,18 +90,25 @@ class HeadGradientGate:
         logits_flat = logits.reshape(N, -1).detach()
         labels_flat = labels.reshape(N)
 
+        # Handle padding tokens: HF uses -100 as ignore index
+        # Replace -100 with 0 for safe indexing, then mask out contribution
+        valid_mask = (labels_flat >= 0)
+        safe_labels = torch.where(valid_mask, labels_flat, torch.zeros_like(labels_flat))
+
         s_h = torch.zeros(N, self.m, dtype=torch.float32, device=h_flat.device)
         s_h.index_add_(1, self.bucket_h, (self.sign_h.float().unsqueeze(0) * h_flat.float()))
 
         topk_val, topk_idx = torch.topk(logits_flat, k=min(self.k_topk, logits_flat.size(1) - 1), dim=1)
-        gold = labels_flat.unsqueeze(1)
+        gold = safe_labels.unsqueeze(1)
         idx = torch.cat([topk_idx, gold], dim=1)
 
         sel_logits = torch.gather(logits_flat, 1, idx)
         sel_probs = torch.softmax(sel_logits, dim=1)
 
-        is_gold = (idx == gold)
+        is_gold = (idx == safe_labels.unsqueeze(1))
         sel_errors = sel_probs - is_gold.to(sel_probs.dtype)
+        # Zero out padding tokens so they don't contribute to sketch
+        sel_errors = sel_errors * valid_mask.unsqueeze(1).float()
 
         s_e = torch.zeros(N, self.m, dtype=torch.float32, device=logits_flat.device)
         sel_signs = self.sign_e[idx]
