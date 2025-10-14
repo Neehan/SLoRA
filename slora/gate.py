@@ -95,8 +95,11 @@ class HeadGradientGate:
         valid_mask = (labels_flat >= 0)
         safe_labels = torch.where(valid_mask, labels_flat, torch.zeros_like(labels_flat))
 
+        # Mask hidden states for padding tokens
+        h_masked = h_flat * valid_mask.unsqueeze(1).float()
+
         s_h = torch.zeros(N, self.m, dtype=torch.float32, device=h_flat.device)
-        s_h.index_add_(1, self.bucket_h, (self.sign_h.float().unsqueeze(0) * h_flat.float()))
+        s_h.index_add_(1, self.bucket_h, (self.sign_h.float().unsqueeze(0) * h_masked.float()))
 
         topk_val, topk_idx = torch.topk(logits_flat, k=min(self.k_topk, logits_flat.size(1) - 1), dim=1)
         gold = safe_labels.unsqueeze(1)
@@ -124,8 +127,12 @@ class HeadGradientGate:
         z_tokens = torch.fft.ifft(fft_h * fft_e, dim=1).real
 
         z = z_tokens.sum(dim=0)
+        z_norm = z.norm()
 
-        return z / (z.norm() + 1e-12)
+        if z_norm < 1e-8:
+            return torch.zeros(self.m, dtype=torch.float32, device=z.device)
+
+        return z / z_norm
 
     def novelty(self, z: torch.Tensor) -> float:
         """Compute directional novelty from normalized sketch."""

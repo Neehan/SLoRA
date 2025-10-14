@@ -49,8 +49,8 @@ slora:
   enable: true
   m: 512
   k: 64
-  tau_n: 0.992
-  burn_in: 20
+  tau_n: 0.30
+  burn_in: 10
   seed: 0
   reorth_every: 12
   k_topk: 64
