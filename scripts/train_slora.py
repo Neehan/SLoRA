@@ -74,7 +74,7 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
             examples["text"],
             truncation=True,
             max_length=config["data"]["max_seq_length"],
-            padding=False,
+            padding="max_length",
         )
         result["labels"] = result["input_ids"].copy()
         return result
