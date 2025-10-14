@@ -91,13 +91,28 @@ class SLoRATrainer(Trainer):
 
             z = self.gate.embed(hidden_states, logits, labels)
 
+            if self.accelerator.is_main_process and self.gate.step_count % 20 == 0:
+                print(f"\n[DEBUG] step={self.gate.step_count}")
+                print(f"  z.norm() after embed: {z.norm().item():.6f}")
+
             if self.accelerator.num_processes > 1:
                 torch.distributed.all_reduce(z, op=torch.distributed.ReduceOp.SUM)
+                if self.accelerator.is_main_process and self.gate.step_count % 20 == 0:
+                    print(f"  z.norm() after all_reduce: {z.norm().item():.6f}")
                 z = z / self.accelerator.num_processes
+                if self.accelerator.is_main_process and self.gate.step_count % 20 == 0:
+                    print(f"  z.norm() after div: {z.norm().item():.6f}")
                 z = z / (z.norm() + 1e-12)
+                if self.accelerator.is_main_process and self.gate.step_count % 20 == 0:
+                    print(f"  z.norm() after renorm: {z.norm().item():.6f}")
 
             novelty = self.gate.novelty(z)
             accept = self.gate.accept(novelty)
+
+            if self.accelerator.is_main_process and self.gate.step_count % 20 == 0:
+                W = self.gate.sketch.get_basis()
+                print(f"  W.shape: {W.shape}")
+                print(f"  novelty: {novelty:.6f}, accept: {accept}\n")
 
             if self.accelerator.num_processes > 1:
                 accept_tensor = torch.tensor(
