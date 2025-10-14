@@ -201,6 +201,7 @@ def main():
         remove_unused_columns=config["training"]["remove_unused_columns"],
         report_to=config["logging"]["report_to"],
         run_name=config["logging"].get("wandb_run_name", None),
+        ddp_find_unused_parameters=False,
     )
 
     gate_config = None
