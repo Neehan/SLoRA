@@ -130,7 +130,6 @@ class HeadGradientGate:
         z_norm = z.norm()
 
         if z_norm < 1e-8:
-            print(f"[DEBUG] All-zero sketch: valid_mask.sum()={valid_mask.sum().item()}/{N}, s_h norm={s_h.norm().item():.6f}, s_e norm={s_e.norm().item():.6f}")
             return torch.zeros(self.m, dtype=torch.float32, device=z.device)
 
         return z / z_norm
@@ -139,25 +138,15 @@ class HeadGradientGate:
         """Compute directional novelty from normalized sketch."""
         W = self.sketch.get_basis()
 
-        z_norm = z.norm().item()
-
-        if self.step_count % 50 == 0 or z_norm < 0.99:
-            print(f"[DEBUG] step={self.step_count}, z_norm={z_norm:.6f}, W.shape={W.shape}")
-
         if W.shape[1] == 0:
             return 1.0
 
-        if z_norm < 1e-8:
+        if z.norm().item() < 1e-8:
             return 0.0
 
         proj = W.T @ z
         redundancy = (proj @ proj).item()
-        nov = 1.0 - torch.clamp(torch.tensor(redundancy), min=0.0, max=1.0).item()
-
-        if self.step_count % 50 == 0:
-            print(f"[DEBUG]   redundancy={redundancy:.6f}, nov={nov:.6f}")
-
-        return nov
+        return 1.0 - torch.clamp(torch.tensor(redundancy), min=0.0, max=1.0).item()
 
     def accept(self, novelty: float) -> bool:
         """Decide whether to accept based on novelty threshold."""
