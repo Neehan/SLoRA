@@ -6,6 +6,8 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import torch
 from transformers import (
     AutoTokenizer,
@@ -210,7 +212,7 @@ def main():
         }
 
     data_collator = DataCollatorForLanguageModeling(
-        tokenizer, mlm=False, pad_to_multiple_of=8
+        tokenizer, mlm=False, pad_to_multiple_of=8, padding=True
     )
 
     trainer = SLoRATrainer(
@@ -218,7 +220,7 @@ def main():
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=data_collator,
         gate_config=gate_config,
         enable_gate=enable_gate,
