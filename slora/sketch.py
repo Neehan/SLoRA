@@ -39,8 +39,9 @@ class FrequentDirections:
             k: Target rank (number of basis vectors to maintain)
             reorth_every: Re-orthonormalize via QR every N updates (for stability)
             device: Device for tensors
-            dtype: Data type for W (should match model dtype: float32 or bfloat16)
+            dtype: Data type for W (must be fp32 or fp64 for stable SVD)
         """
+        assert dtype in (torch.float32, torch.float64), f"dtype must be fp32 or fp64 for stable SVD, got {dtype}"
         assert k <= m, f"k={k} must be <= m={m}"
         self.m = m
         self.k = k

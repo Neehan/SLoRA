@@ -12,6 +12,7 @@ from transformers import (
     AutoModelForCausalLM,
     TrainingArguments,
     BitsAndBytesConfig,
+    DataCollatorForLanguageModeling,
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from datasets import load_dataset
@@ -206,12 +207,15 @@ def main():
             "reorth_every": config["slora"]["reorth_every"],
         }
 
+    data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False, pad_to_multiple_of=8)
+
     trainer = SLoRATrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
+        data_collator=data_collator,
         gate_config=gate_config,
         enable_gate=enable_gate,
     )
