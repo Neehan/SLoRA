@@ -63,8 +63,23 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
     print("\n⚙️  GATE METRICS (SLoRA)")
     print("-" * 80)
 
+    gate_file = slora_path / "gate_metrics.json"
     gate_entries = [e for e in slora_state["log_history"] if "gate/acceptance_rate_overall" in e]
-    if gate_entries:
+
+    if gate_file.exists():
+        with open(gate_file) as f:
+            gate_data = json.load(f)
+        acc_rate = gate_data["acceptance_rate"]
+        accepted = gate_data["accepted_steps"]
+        total = gate_data["total_steps"]
+        rejected = gate_data["rejected_steps"]
+
+        print(f"Acceptance Rate:     {acc_rate:.2%}")
+        print(f"Accepted Steps:      {accepted}")
+        print(f"Rejected Steps:      {rejected}")
+        print(f"Total Steps:         {total}")
+        print(f"Efficiency Gain:     {(1 - acc_rate) * 100:.1f}% fewer updates")
+    elif gate_entries:
         final_gate = gate_entries[-1]
         acc_rate = final_gate["gate/acceptance_rate_overall"]
         accepted = final_gate.get("gate/accepted_steps_total", 0)
@@ -76,7 +91,7 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
         print(f"Total Steps:         {total}")
         print(f"Efficiency Gain:     {(1 - acc_rate) * 100:.1f}% fewer updates")
     else:
-        print("⚠️  No gate metrics found")
+        print("⚠️  No gate metrics found - check W&B")
 
     print("\n📈 EVALUATION METRICS")
     print("-" * 80)
@@ -97,7 +112,7 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
     loss_diff_pct = abs((slora_loss - baseline_loss) / baseline_loss * 100)
     print(f"✓ Loss difference: {loss_diff_pct:.2f}% (target: <0.5%)")
 
-    if gate_entries:
+    if gate_file.exists() or gate_entries:
         rejection_rate = (1 - acc_rate) * 100
         print(f"✓ Update reduction: {rejection_rate:.1f}% (target: ≥30%)")
 
@@ -112,19 +127,6 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
 
     print("=" * 80)
 
-    if output_path:
-        with open(output_path, "w") as f:
-            f.write("# SLoRA Analysis Report\n\n")
-            f.write(f"## Training Loss\n\n")
-            f.write(f"- Baseline: {baseline_loss:.4f}\n")
-            f.write(f"- SLoRA: {slora_loss:.4f}\n")
-            f.write(f"- Difference: {slora_loss - baseline_loss:+.4f} ({(slora_loss - baseline_loss) / baseline_loss * 100:+.2f}%)\n")
-            if gate_entries:
-                f.write(f"\n## Gate Metrics\n\n")
-                f.write(f"- Acceptance Rate: {acc_rate:.2%}\n")
-                f.write(f"- Accepted: {accepted} / {total}\n")
-                f.write(f"- Efficiency Gain: {(1 - acc_rate) * 100:.1f}%\n")
-        print(f"\nReport saved: {output_path}")
 
 
 def main():

@@ -159,4 +159,28 @@ class SLoRATrainer(Trainer):
         if self.enable_gate and self.gate is not None:
             logs["gate/acceptance_rate_overall"] = self.gate.acceptance_rate()
             logs["gate/accepted_steps_total"] = self.gate.accepted_count
+            logs["gate/total_steps"] = self.gate.step_count
         super().log(logs, start_time)
+
+    def _save_checkpoint(self, model, trial, metrics=None):
+        """Override to save gate metrics in checkpoint."""
+        checkpoint_folder = super()._save_checkpoint(model, trial, metrics)
+
+        if self.enable_gate and self.gate is not None and checkpoint_folder is not None:
+            import json
+            from pathlib import Path
+
+            gate_metrics = {
+                "acceptance_rate": self.gate.acceptance_rate(),
+                "accepted_steps": self.gate.accepted_count,
+                "total_steps": self.gate.step_count,
+                "rejected_steps": self.gate.step_count - self.gate.accepted_count,
+                "novelty_history": self.novelty_history,
+                "accept_history": self.accept_history,
+            }
+
+            gate_file = Path(checkpoint_folder) / "gate_metrics.json"
+            with open(gate_file, "w") as f:
+                json.dump(gate_metrics, f, indent=2)
+
+        return checkpoint_folder
