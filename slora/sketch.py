@@ -3,31 +3,32 @@ import torch
 
 class FrequentDirections:
     """
-    Streaming rank-k sketch via Frequent Directions algorithm.
+    Streaming rank-k orthonormal basis via incremental QR/SVD.
 
     **Purpose:**
-    Maintain approximate rank-k basis W ∈ R^{m×k} of a stream of vectors z₁, z₂, ...
-    such that W captures the top-k principal directions of the vectors seen so far.
+    Maintain orthonormal basis W ∈ R^{m×k} spanning the top-k principal directions
+    of a stream of unit vectors z₁, z₂, ...
 
-    **Algorithm (Liberty 2013):**
-    1. Maintain matrix W with ≤ k columns
-    2. On new vector z: append z as new column → W has k+1 columns
-    3. Compute SVD: W = U Σ Vᵀ
-    4. "Shrink" singular values: Σ' = √(Σ² - δ²) where δ = σₖ₊₁
-    5. Keep top k columns: W ← U[:, :k] Σ'[:k]
+    **Algorithm:**
+    1. Maintain matrix W with ≤ k orthonormal columns
+    2. On new vector z: append z as new column
+    3. If W has ≤ k columns: orthonormalize via QR
+    4. If W has k+1 columns: SVD, keep top k left singular vectors (orthonormal)
+    5. Periodic re-orthonormalization via QR for numerical stability
 
-    **Guarantees:**
-    - W is approximately orthonormal (enforced via periodic QR)
-    - W approximates top-k principal subspace of all vectors seen
+    **Properties:**
+    - W is always orthonormal: W^T W = I_k
+    - |W^T z|² ≤ 1 for any unit vector z (subspace projection bound)
     - Space: O(m × k)
-    - Time per update: O(m × k²) amortized
+    - Time per update: O(m × k²) for QR
 
     **Why this matters for SLoRA:**
-    We stream gradient directions {ẑ₁, ẑ₂, ...} as we accept them.
-    W captures the dominant gradient subspace → future gradients projected onto W
-    show low novelty if redundant, high novelty if exploring new directions.
+    We stream accepted gradient sketches {ẑ₁, ẑ₂, ...} (unit vectors).
+    W captures the gradient subspace → novelty = 1 - |W^T ẑ|² measures
+    how orthogonal a new gradient is to previously accepted directions.
 
-    Reference: Liberty (2013) "Simple and Deterministic Matrix Sketching"
+    Note: Simplified from Liberty (2013) Frequent Directions—we drop singular value
+    shrinking since we only need subspace span for novelty, not low-rank approximation.
     """
 
     def __init__(self, m: int, k: int, reorth_every: int = 128, device: str = "cuda", dtype: torch.dtype = torch.float32):
@@ -55,20 +56,16 @@ class FrequentDirections:
 
     def update(self, z: torch.Tensor) -> None:
         """
-        Add unit vector z ∈ R^m to sketch and shrink to rank k via Frequent Directions.
+        Add unit vector z ∈ R^m to orthonormal basis.
 
         Process:
-        1. Append z as new column: W ← [W | z]  (now has k+1 or fewer columns)
-        2. If W has > k columns:
-           a. Compute SVD: W = U Σ Vᵀ
-           b. Shrink singular values: σᵢ' = √(σᵢ² - δ²) where δ = σₖ₊₁
-           c. Keep top k: W ← U[:, :k] diag(Σ'[:k])
-        3. Periodically re-orthonormalize via QR for numerical stability
+        1. Append z as new column: W ← [W | z]
+        2. If W has ≤ k columns: orthonormalize via QR → W is orthonormal
+        3. If W has k+1 columns: SVD, keep top k left singular vectors (U[:, :k])
+        4. Periodic re-orthonormalization via QR for numerical stability
 
-        **Why shrinking works:**
-        Subtracting δ² from all squared singular values reduces contribution of
-        smallest direction (σₖ₊₁) while preserving relative importance of top-k.
-        This is the "frequent directions" trick: discard least frequent direction.
+        This maintains an orthonormal basis spanning the dominant subspace
+        of all vectors seen so far.
 
         Args:
             z: Unit vector ∈ R^m (must have norm ≈ 1.0)
@@ -91,6 +88,10 @@ class FrequentDirections:
 
             # Keep orthonormal basis (drop scaling for novelty computation)
             self.W = U[:, :self.k]
+        else:
+            # Before hitting k, orthonormalize to maintain basis quality
+            Q, _ = torch.linalg.qr(self.W)
+            self.W = Q
 
         # Step 3: Periodic re-orthonormalization for numerical stability
         self.update_count += 1
