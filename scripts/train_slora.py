@@ -29,7 +29,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
     return config
 
 
-def prepare_data(config: Dict[str, Any], tokenizer):
+def prepare_data(config: Dict[str, Any], tokenizer, logger):
     """Load and prepare dataset."""
     dataset = load_dataset(
         config["data"]["dataset_name"],
@@ -162,7 +162,7 @@ def main():
     model.print_trainable_parameters()
 
     logger.info("Loading and preparing dataset")
-    train_dataset, eval_dataset = prepare_data(config, tokenizer)
+    train_dataset, eval_dataset = prepare_data(config, tokenizer, logger)
 
     training_args = TrainingArguments(
         output_dir=config["training"]["output_dir"],
