@@ -112,7 +112,7 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
     loss_diff_pct = abs((slora_loss - baseline_loss) / baseline_loss * 100)
     print(f"✓ Loss difference: {loss_diff_pct:.2f}% (target: <0.5%)")
 
-    if gate_file.exists() or gate_entries:
+    if acc_rate is not None:
         rejection_rate = (1 - acc_rate) * 100
         print(f"✓ Update reduction: {rejection_rate:.1f}% (target: ≥30%)")
 
