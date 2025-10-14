@@ -2,7 +2,7 @@
 
 model:
   name: google/gemma-3-12b-it # Using gemma-3-12b-it as placeholder
-  use_flash_attention_2: true
+  use_flash_attention_2: false
   load_in_4bit: true
   bnb_4bit_compute_dtype: bfloat16
   bnb_4bit_quant_type: nf4

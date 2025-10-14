@@ -2,7 +2,7 @@
 
 model:
   name: google/gemma-3-1b-it
-  use_flash_attention_2: true
+  use_flash_attention_2: false
 
 training:
   output_dir: ./outputs/quick_gemma3_1b_it
