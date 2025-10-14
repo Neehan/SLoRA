@@ -32,6 +32,20 @@ class SLoRATrainer(Trainer):
         self.novelty_history = []
         self.accept_history = []
 
+    def _sync_gate_step(self) -> None:
+        """Synchronize gate step across DDP ranks - single all-reduce for counts + threshold."""
+        self.gate.step()
+
+        if self.accelerator.num_processes > 1:
+            sync_tensor = torch.tensor(
+                [float(self.gate.step_count), float(self.gate.accepted_count), self.gate.current_novelty_threshold],
+                device=self.accelerator.device
+            )
+            torch.distributed.all_reduce(sync_tensor, op=torch.distributed.ReduceOp.AVG)
+            self.gate.step_count = int(sync_tensor[0].item())
+            self.gate.accepted_count = int(sync_tensor[1].item())
+            self.gate.current_novelty_threshold = sync_tensor[2].item()
+
     def _initialize_gate(self) -> None:
         """Initialize gate after model is set up."""
         if self.gate is not None or self.gate_config is None:
@@ -96,8 +110,7 @@ class SLoRATrainer(Trainer):
             z = self.gate.embed(hidden_states, logits, labels)
 
             if self.accelerator.num_processes > 1:
-                torch.distributed.all_reduce(z, op=torch.distributed.ReduceOp.SUM)
-                z = z / self.accelerator.num_processes
+                torch.distributed.all_reduce(z, op=torch.distributed.ReduceOp.AVG)
                 z = z / (z.norm() + 1e-12)
 
             novelty = self.gate.novelty(z)
@@ -130,11 +143,7 @@ class SLoRATrainer(Trainer):
             self.optimizer.zero_grad(set_to_none=True)  # type: ignore
             ret_loss = torch.tensor(0.0, device=self.accelerator.device)
 
-        self.gate.step()
-        if self.accelerator.num_processes > 1:
-            threshold_tensor = torch.tensor([self.gate.current_novelty_threshold], device=self.accelerator.device)
-            torch.distributed.all_reduce(threshold_tensor, op=torch.distributed.ReduceOp.AVG)
-            self.gate.current_novelty_threshold = threshold_tensor.item()
+        self._sync_gate_step()
 
         return ret_loss
 
@@ -154,14 +163,20 @@ class SLoRATrainer(Trainer):
     def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
         """Add gate statistics to logs."""
         if self.gate is not None:
-            avg_novelty = sum(self.novelty_history) / len(self.novelty_history) if self.novelty_history else 0.0
-            logs["gate/novelty"] = self.novelty_history[-1] if self.novelty_history else 0.0
+            avg_novelty = (
+                sum(self.novelty_history) / len(self.novelty_history)
+                if self.novelty_history
+                else 0.0
+            )
+            logs["gate/novelty"] = (
+                self.novelty_history[-1] if self.novelty_history else 0.0
+            )
             logs["gate/novelty_avg"] = avg_novelty
+            logs["gate/current_novelty_threshold"] = self.gate.current_novelty_threshold
             logs["gate/accept"] = self.accept_history[-1] if self.accept_history else 1
             logs["gate/acceptance_rate"] = self.gate.acceptance_rate()
             logs["gate/accepted_steps"] = self.gate.accepted_count
             logs["gate/total_steps"] = self.gate.step_count
-            logs["gate/current_novelty_threshold"] = self.gate.current_novelty_threshold
         super().log(logs, start_time)
 
     def _save_checkpoint(self, model, trial, metrics=None):

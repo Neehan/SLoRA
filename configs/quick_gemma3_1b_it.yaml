@@ -49,12 +49,12 @@ slora:
   enable: true
   m: 512
   k: 64
-  target_novelty: 0.08
+  target_novelty: 0.70
   novelty_scaler: 10.0
   novelty_ema_rate: 0.01
   burn_in: 200
   seed: 0
-  reorth_every: 12
+  reorth_every: 50
   k_topk: 64
 
 data:
