@@ -20,6 +20,7 @@ echo "Starting time: $(date)"
 PROJECT_ROOT="/home/notadib/projects/SLoRA"
 cd ${PROJECT_ROOT}
 
+export PYTHONUNBUFFERED=1
 export PYTHONPATH="${PYTHONPATH}:${PROJECT_ROOT}"
 export WANDB_PROJECT="slora"
 export CUDA_VISIBLE_DEVICES=0,1,2,3
