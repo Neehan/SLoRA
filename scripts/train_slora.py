@@ -167,6 +167,9 @@ def main():
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
 
+    if config["training"]["gradient_checkpointing"]:
+        model.enable_input_require_grads()
+
     logger.info("Loading and preparing dataset")
     train_dataset, eval_dataset = prepare_data(config, tokenizer, logger)
 
