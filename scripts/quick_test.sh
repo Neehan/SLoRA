@@ -30,13 +30,13 @@ export FLASH_ATTENTION_SKIP=True
 
 mkdir -p logs
 
-# echo "Running baseline LoRA..."
-# accelerate launch \
-#     --config_file configs/accelerate_config.yaml \
-#     --num_processes 4 \
-#     --mixed_precision bf16 \
-#     scripts/train_slora.py \
-#     --config configs/baseline.yaml 2>&1 | tee logs/baseline_gemma3_1b_it.log
+echo "Running baseline LoRA..."
+accelerate launch \
+    --config_file configs/accelerate_config.yaml \
+    --num_processes 4 \
+    --mixed_precision bf16 \
+    scripts/train_slora.py \
+    --config configs/baseline.yaml 2>&1 | tee logs/baseline_gemma3_1b_it.log
 
 echo "Baseline complete. Starting SLoRA run..."
 
