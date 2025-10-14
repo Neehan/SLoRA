@@ -91,6 +91,9 @@ class SLoRATrainer(Trainer):
         Override training step to only compute loss and backward (no stepping).
         Gating logic moved to optimizer_step.
         """
+        if self.enable_gate and self.gate is None:
+            self._initialize_gate()
+
         model.train()
         inputs = self._prepare_inputs(inputs)
 
