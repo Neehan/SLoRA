@@ -2,7 +2,8 @@ import torch
 from transformers import Trainer
 from typing import Optional, Dict, Any
 from slora.gate import SubspaceGate
-from slora.hooks import lora_grad_vec, compute_lora_dim
+import json
+from pathlib import Path
 
 
 class SLoRATrainer(Trainer):
@@ -164,11 +165,9 @@ class SLoRATrainer(Trainer):
 
     def _save_checkpoint(self, model, trial, metrics=None):
         """Override to save gate metrics in checkpoint."""
-        checkpoint_folder = super()._save_checkpoint(model, trial, metrics)
+        checkpoint_folder = super()._save_checkpoint(model, trial)
 
         if self.enable_gate and self.gate is not None and checkpoint_folder is not None:
-            import json
-            from pathlib import Path
 
             gate_metrics = {
                 "acceptance_rate": self.gate.acceptance_rate(),
