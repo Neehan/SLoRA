@@ -52,9 +52,10 @@ slora:
   enable: true
   m: 512
   k: 64
-  target_novelty: 0.08
-  novelty_scaler: 10.0
-  novelty_ema_rate: 0.01
+  target_accept_rate: 0.70
+  novelty_ema: 0.5
+  novelty_ema_decay: 0.99
+  controller_lr: 0.01
   burn_in: 3000
   seed: 0
   reorth_every: 128

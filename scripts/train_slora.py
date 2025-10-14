@@ -210,9 +210,10 @@ def main():
         gate_config = {
             "m": config["slora"]["m"],
             "k": config["slora"]["k"],
-            "target_novelty": config["slora"]["target_novelty"],
-            "novelty_scaler": config["slora"]["novelty_scaler"],
-            "novelty_ema_rate": config["slora"]["novelty_ema_rate"],
+            "target_accept_rate": config["slora"]["target_accept_rate"],
+            "novelty_ema": config["slora"]["novelty_ema"],
+            "novelty_ema_decay": config["slora"]["novelty_ema_decay"],
+            "controller_lr": config["slora"]["controller_lr"],
             "burn_in": config["slora"]["burn_in"],
             "seed": config["slora"]["seed"],
             "reorth_every": config["slora"]["reorth_every"],
@@ -239,12 +240,6 @@ def main():
     logger.info("Saving final model")
     trainer.save_model()
     tokenizer.save_pretrained(config["training"]["output_dir"])
-
-    if trainer.gate is not None:
-        logger.info(f"Final acceptance rate: {trainer.gate.acceptance_rate():.4f}")
-        logger.info(
-            f"Total accepted steps: {trainer.gate.accepted_count}/{trainer.gate.step_count}"
-        )
 
 
 if __name__ == "__main__":

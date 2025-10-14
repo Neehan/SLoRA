@@ -45,9 +45,10 @@ class SLoRATrainer(Trainer):
             "vocab_size": config.vocab_size,  # type: ignore
             "m": self.gate_config["m"],
             "k": self.gate_config["k"],
-            "target_novelty": self.gate_config["target_novelty"],
-            "novelty_scaler": self.gate_config["novelty_scaler"],
-            "novelty_ema_rate": self.gate_config["novelty_ema_rate"],
+            "target_accept_rate": self.gate_config["target_accept_rate"],
+            "novelty_ema": self.gate_config["novelty_ema"],
+            "novelty_ema_decay": self.gate_config["novelty_ema_decay"],
+            "controller_lr": self.gate_config["controller_lr"],
             "burn_in": self.gate_config["burn_in"],
             "seed": self.gate_config["seed"],
             "device": str(device),
@@ -62,9 +63,10 @@ class SLoRATrainer(Trainer):
                 "gate/d_hidden": config.hidden_size,  # type: ignore
                 "gate/m": gate_params["m"],
                 "gate/k": gate_params["k"],
-                "gate/target_novelty": gate_params["target_novelty"],
-                "gate/novelty_scaler": gate_params["novelty_scaler"],
-                "gate/novelty_ema_rate": gate_params["novelty_ema_rate"],
+                "gate/target_accept_rate": gate_params["target_accept_rate"],
+                "gate/novelty_ema": gate_params["novelty_ema"],
+                "gate/novelty_ema_decay": gate_params["novelty_ema_decay"],
+                "gate/controller_lr": gate_params["controller_lr"],
                 "gate/burn_in": gate_params["burn_in"],
             }
         )
@@ -160,9 +162,9 @@ class SLoRATrainer(Trainer):
             logs["gate/novelty_avg"] = avg_novelty
             logs["gate/current_novelty_threshold"] = self.gate.current_novelty_threshold
             logs["gate/accept"] = self.accept_history[-1] if self.accept_history else 1
-            logs["gate/acceptance_rate"] = self.gate.acceptance_rate()
-            logs["gate/accepted_steps"] = self.gate.accepted_count
-            logs["gate/total_steps"] = self.gate.step_count
+            logs["gate/acceptance_rate"] = self.gate.acceptance_rate(
+                self.state.global_step
+            )
         super().log(logs, start_time)
 
     def _save_checkpoint(self, model, trial, metrics=None):
@@ -176,10 +178,10 @@ class SLoRATrainer(Trainer):
                 else 0.0
             )
             gate_metrics = {
-                "acceptance_rate": self.gate.acceptance_rate(),
+                "acceptance_rate": self.gate.acceptance_rate(self.state.global_step),
                 "accepted_steps": self.gate.accepted_count,
-                "total_steps": self.gate.step_count,
-                "rejected_steps": self.gate.step_count - self.gate.accepted_count,
+                "total_steps": self.state.global_step,
+                "rejected_steps": self.state.global_step - self.gate.accepted_count,
                 "avg_novelty": avg_novelty,
                 "novelty_history": self.novelty_history,
                 "accept_history": self.accept_history,
