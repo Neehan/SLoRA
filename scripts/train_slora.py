@@ -233,6 +233,9 @@ def main():
         enable_gate=enable_gate,
     )
 
+    if config["training"]["gradient_checkpointing"] and torch.distributed.is_initialized():
+        trainer.model._set_static_graph()
+
     logger.info("Starting training")
     trainer.train()
 
