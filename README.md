@@ -2,23 +2,33 @@
 
 **Token-efficient fine-tuning via directional gradient novelty gating.**
 
-SLoRA gates optimizer updates based on a single metric: **gradient novelty** relative to a learned low-rank subspace. This reduces redundant updates during fine-tuning, improving sample/token efficiency without sacrificing final performance.
+## Overview
+
+SLoRA is a research framework for reducing redundant optimizer updates during LoRA fine-tuning. It gates updates based on **gradient novelty** relative to a learned low-rank subspace of previously accepted gradients, improving sample/token efficiency without sacrificing final performance.
+
+### Research Motivation
+
+Fine-tuning often involves redundant updates—gradients that lie in the span of previously seen directions provide diminishing returns. SLoRA identifies and skips these updates by:
+
+1. Maintaining a streaming sketch of the gradient subspace using Frequent Directions
+2. Computing directional novelty of each gradient relative to this subspace
+3. Accepting only updates that exceed a novelty threshold
+
+This approach differs fundamentally from loss-based methods (e.g., Selective Backprop) by focusing on gradient geometry rather than loss magnitude.
 
 ---
 
-## Core Idea
+## Algorithm
 
-**One score, one threshold:**
+**One metric, one threshold:**
 
-1. **Random projection**: Compress LoRA gradient `g ∈ R^d` to `z = R^T g ∈ R^m` using fixed random signs `R ∈ {±1}^{d×m}` (m=512)
+1. **Random projection**: Compress LoRA gradient `g ∈ R^d` → `z = R^T g ∈ R^m` using fixed random signs `R ∈ {±1}^{d×m}` (m=512)
 2. **Streaming basis**: Maintain rank-k orthonormal basis `W ∈ R^{m×k}` (k=64) of accepted gradients via Frequent Directions
 3. **Novelty score**: `nov = 1 - |W^T ẑ|²` where `ẑ = z/|z|` (directional, in [0,1])
 4. **Gate**: Accept update if `nov ≥ tau_n` (default 0.30)
 5. **Burn-in**: Always accept first S steps (2k-3k) to initialize basis
 
-**Key differences from Selective Backprop:**
-- Gates on **directional novelty** (subspace projection), not loss magnitude
-- Two batches with same loss are treated differently if one is redundant (in-span)
+**Key insight:** Two batches with identical loss can have different novelty—one may be redundant (in-span of prior gradients) while the other explores new directions.
 
 ---
 
@@ -287,34 +297,42 @@ Metrics logged to W&B:
 
 ---
 
-## Complexity
+## Computational Complexity
 
-**Compute overhead per accepted batch:**
-- Project gradient to m-dimensional space: O(d × m)
-- Compute novelty (dot products): O(m × k)
-- Update sketch (SVD): O(m² × k) every k accepts, amortized O(m × k)
+**Per-step overhead:**
+- Random projection: O(d × m) = O(d × 512)
+- Novelty computation: O(m × k) = O(512 × 64) ≈ 32k FLOPs
+- Sketch update: O(m² × k) amortized over k steps
 
-**Total:** ~O(512 × 64) = 32k FLOPs, negligible vs backprop
+**Total:** Negligible compared to backpropagation (<<0.1% training time)
 
 **Memory:** O(m × k) = 512 × 64 × 4 bytes = 128KB (trivial)
 
-**Speedup sources:**
-1. Fewer optimizer/momentum updates (lighter but non-zero)
-2. Optional: loss-floor gate skips backward entirely (major speedup)
+**Efficiency gains:**
+1. Fewer optimizer steps → reduced momentum/Adam state updates
+2. Token efficiency → same performance with less data
+3. Optional loss-floor gate can skip backward pass entirely (future work)
 
 ---
 
-## Next Steps (if quick test passes)
+## Research Roadmap
 
-1. **Full experiment:** 400k samples, 1 epoch, Gemma-2-9B QLoRA
-2. **Second model:** Qwen2.5-7B with same hyperparameters
-3. **Adaptive threshold:** Add proportional controller to hit target acceptance rate
-4. **Loss-floor gate:** Add cheap skip-backward for wall-clock wins
-5. **Downstream eval:** MT-Bench, AlpacaEval 2.0
+**Immediate (validation):**
+1. Baseline comparison: verify ≥30% token efficiency improvement at comparable loss
+2. Ablation studies: novelty-only vs loss-floor vs combined
+3. Hyperparameter sensitivity: tau_n, k, burn_in
 
-**Do NOT add:**
-- Anchors, quantiles, or multi-term scores (keep it simple)
-- Heavy eval infrastructure until token efficiency is proven
+**Next steps (if validation succeeds):**
+1. Scale to 7B-13B models with QLoRA
+2. Multiple datasets: instruction tuning, domain adaptation
+3. Adaptive threshold controller for target acceptance rate
+4. Downstream evaluation: MT-Bench, AlpacaEval, MMLU
+5. Loss-floor gate for wall-clock speedup
+
+**Out of scope (keep simple):**
+- Multi-metric scoring functions
+- Learnable projections or adaptive bases
+- Heavy infrastructure until core efficiency is proven
 
 ---
 
