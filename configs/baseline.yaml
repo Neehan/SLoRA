@@ -8,8 +8,8 @@ training:
   output_dir: ./outputs/baseline_gemma3_1b_it
   num_train_epochs: 1
   max_steps: 12000
-  per_device_train_batch_size: 4
-  gradient_accumulation_steps: 16
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 64
   gradient_checkpointing: false
   learning_rate: 2.0e-5
   lr_scheduler_type: cosine
