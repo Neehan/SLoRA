@@ -50,8 +50,7 @@ slora:
   m: 512
   k: 64
   target_accept_rate: 0.70
-  novelty_ema: 0.5
-  novelty_ema_decay: 0.99
+  initial_threshold: 0.1
   controller_lr: 0.01
   burn_in: 200
   seed: 0

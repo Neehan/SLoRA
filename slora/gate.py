@@ -47,14 +47,13 @@ class HeadGradientGate:
         m: int,
         k: int,
         target_accept_rate: float,
-        novelty_ema: float,
-        novelty_ema_decay: float,
         controller_lr: float,
         burn_in: int,
         seed: int,
         device: str,
         reorth_every: int,
         k_topk: int,
+        initial_threshold: float,
     ):
         assert k <= m
 
@@ -68,9 +67,7 @@ class HeadGradientGate:
         self.k_topk = k_topk
         self.device = torch.device(device)
 
-        self.novelty_ema = novelty_ema
-        self.novelty_ema_decay = novelty_ema_decay
-        self.current_novelty_threshold = novelty_ema
+        self.current_novelty_threshold = initial_threshold
 
         self.rng = torch.Generator(device=device).manual_seed(seed)
 
@@ -193,12 +190,10 @@ class HeadGradientGate:
 
     def accept(self, novelty: float, global_step: int) -> bool:
         """
-        Accept if novelty exceeds dynamic threshold based on recent novelty EMA.
+        Accept if novelty exceeds dynamic threshold.
         During burn-in, accept all updates.
         After burn-in, threshold adapts to maintain target acceptance rate.
         """
-        self.novelty_ema = self.novelty_ema_decay * self.novelty_ema + (1 - self.novelty_ema_decay) * novelty
-
         if global_step < self.burn_in:
             return True
 
@@ -210,11 +205,11 @@ class HeadGradientGate:
         self.accepted_count += 1
 
     def step(self, global_step: int) -> None:
-        """Adapt threshold to maintain target acceptance rate relative to recent novelty distribution."""
+        """Adapt threshold to maintain target acceptance rate."""
         if global_step > self.burn_in:
             current_rate = self.acceptance_rate(global_step)
-            error = self.target_accept_rate - current_rate
-            self.current_novelty_threshold = self.novelty_ema - self.controller_lr * error
+            error = current_rate - self.target_accept_rate
+            self.current_novelty_threshold += self.controller_lr * error
 
     def acceptance_rate(self, global_step: int) -> float:
         """Compute overall acceptance rate."""
