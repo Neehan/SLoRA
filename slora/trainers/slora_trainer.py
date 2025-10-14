@@ -32,23 +32,6 @@ class SLoRATrainer(Trainer):
         self.novelty_history = []
         self.accept_history = []
 
-    def _sync_gate_step(self) -> None:
-        """Synchronize gate step across DDP ranks - only rank 0 increments, then broadcasts."""
-        if self.accelerator.is_main_process:
-            self.gate.step()
-
-        if self.accelerator.num_processes > 1:
-            state_tensor = torch.tensor(
-                [float(self.gate.step_count), float(self.gate.accepted_count), self.gate.current_novelty_threshold],
-                device=self.accelerator.device
-            )
-            torch.distributed.broadcast(state_tensor, src=0)
-            self.gate.step_count = int(state_tensor[0].item())
-            self.gate.accepted_count = int(state_tensor[1].item())
-            self.gate.current_novelty_threshold = state_tensor[2].item()
-        else:
-            self.gate.step()
-
     def _initialize_gate(self) -> None:
         """Initialize gate after model is set up."""
         if self.gate is not None or self.gate_config is None:
@@ -117,7 +100,7 @@ class SLoRATrainer(Trainer):
                 z = z / (z.norm() + 1e-12)
 
             novelty = self.gate.novelty(z)
-            accept = self.gate.accept(novelty)
+            accept = self.gate.accept(novelty, global_step=self.state.global_step)
 
             if self.accelerator.num_processes > 1:
                 accept_tensor = torch.tensor(
@@ -146,7 +129,7 @@ class SLoRATrainer(Trainer):
             self.optimizer.zero_grad(set_to_none=True)  # type: ignore
             ret_loss = torch.tensor(0.0, device=self.accelerator.device)
 
-        self._sync_gate_step()
+        self.gate.step(self.state.global_step)
 
         return ret_loss
 

@@ -154,7 +154,7 @@ class HeadGradientGate:
         redundancy = (proj @ proj).item()
         return 1.0 - torch.clamp(torch.tensor(redundancy), min=0.0, max=1.0).item()
 
-    def accept(self, novelty: float) -> bool:
+    def accept(self, novelty: float, global_step: int = None) -> bool:
         """
         Probabilistic gating with smooth sigmoid acceptance.
 
@@ -163,7 +163,8 @@ class HeadGradientGate:
 
         After burn-in, adapt threshold via EMA to maintain target_novelty acceptance rate.
         """
-        if self.step_count < self.burn_in:
+        step_to_check = global_step if global_step is not None else self.step_count
+        if step_to_check < self.burn_in:
             return True
 
         acceptance_prob = torch.sigmoid(torch.tensor(self.beta * (novelty - self.current_novelty_threshold))).item()
@@ -175,11 +176,12 @@ class HeadGradientGate:
         self.sketch.update(z)
         self.accepted_count += 1
 
-    def step(self) -> None:
+    def step(self, global_step: int = None) -> None:
         """Increment step counter and adapt threshold via EMA."""
         self.step_count += 1
 
-        if self.step_count > self.burn_in:
+        step_for_threshold = global_step if global_step is not None else self.step_count
+        if step_for_threshold > self.burn_in:
             current_rate = self.acceptance_rate()
             error = self.target_novelty - current_rate
             self.current_novelty_threshold += self.novelty_ema_rate * error
