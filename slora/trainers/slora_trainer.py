@@ -115,6 +115,8 @@ class SLoRATrainer(Trainer):
         self.novelty_history.append(novelty)
         self.accept_history.append(int(accept))
 
+        count_increment = 1.0 / self.accelerator.num_processes if self.accelerator.num_processes > 1 else 1.0
+
         if accept:
             with self.compute_loss_context_manager():
                 outputs = model(**inputs, output_hidden_states=True, return_dict=True)
@@ -123,14 +125,13 @@ class SLoRATrainer(Trainer):
             if self.args.gradient_accumulation_steps > 1:
                 loss = loss / self.args.gradient_accumulation_steps
             self.accelerator.backward(loss)
-            count_increment = 1.0 / self.accelerator.num_processes if self.accelerator.num_processes > 1 else 1.0
-            self.gate.update(z, count_increment=count_increment)
+            self.gate.update(z, count_increment)
             ret_loss = loss.detach()
         else:
             self.optimizer.zero_grad(set_to_none=True)  # type: ignore
             ret_loss = torch.tensor(0.0, device=self.accelerator.device)
 
-        self.gate.step(self.state.global_step)
+        self.gate.step(self.state.global_step, accept)
 
         return ret_loss
 

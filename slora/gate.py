@@ -68,6 +68,8 @@ class HeadGradientGate:
         self.device = torch.device(device)
 
         self.current_novelty_threshold = initial_threshold
+        self.acceptance_rate_ema = target_accept_rate
+        self.acceptance_rate_ema_decay = 0.95
 
         self.rng = torch.Generator(device=device).manual_seed(seed)
 
@@ -190,25 +192,34 @@ class HeadGradientGate:
 
     def accept(self, novelty: float, global_step: int) -> bool:
         """
-        Accept if novelty exceeds dynamic threshold.
+        Stochastic acceptance based on novelty score relative to threshold.
         During burn-in, accept all updates.
-        After burn-in, threshold adapts to maintain target acceptance rate.
+        After burn-in, use sigmoid for smooth probabilistic gating (leaky).
         """
         if global_step < self.burn_in:
             return True
 
-        return novelty >= self.current_novelty_threshold
+        gap = novelty - self.current_novelty_threshold
+        acceptance_prob = torch.sigmoid(torch.tensor(20.0 * gap)).item()
+        return (
+            torch.rand(1, generator=self.rng, device=self.device).item()
+            < acceptance_prob
+        )
 
-    def update(self, z: torch.Tensor, count_increment: float = 1.0) -> None:
+    def update(self, z: torch.Tensor, count_increment: float) -> None:
         """Update streaming basis with normalized sketch."""
         self.sketch.update(z)
         self.accepted_count += count_increment
 
-    def step(self, global_step: int) -> None:
-        """Adapt threshold to maintain target acceptance rate."""
+    def step(self, global_step: int, accepted: bool) -> None:
+        """Adapt threshold to maintain target acceptance rate using EMA."""
+        self.acceptance_rate_ema = (
+            self.acceptance_rate_ema_decay * self.acceptance_rate_ema
+            + (1 - self.acceptance_rate_ema_decay) * float(accepted)
+        )
+
         if global_step > self.burn_in:
-            current_rate = self.acceptance_rate(global_step)
-            error = current_rate - self.target_accept_rate
+            error = self.acceptance_rate_ema - self.target_accept_rate
             self.current_novelty_threshold += self.controller_lr * error
 
     def acceptance_rate(self, global_step: int) -> float:
