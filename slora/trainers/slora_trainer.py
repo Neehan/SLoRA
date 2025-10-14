@@ -45,7 +45,8 @@ class SLoRATrainer(Trainer):
             "vocab_size": config.vocab_size,  # type: ignore
             "m": self.gate_config["m"],
             "k": self.gate_config["k"],
-            "tau_n": self.gate_config["tau_n"],
+            "min_novelty": self.gate_config["min_novelty"],
+            "accept_prob": self.gate_config["accept_prob"],
             "burn_in": self.gate_config["burn_in"],
             "seed": self.gate_config["seed"],
             "device": str(device),
@@ -60,7 +61,8 @@ class SLoRATrainer(Trainer):
                 "gate/d_hidden": config.hidden_size,  # type: ignore
                 "gate/m": gate_params["m"],
                 "gate/k": gate_params["k"],
-                "gate/tau_n": gate_params["tau_n"],
+                "gate/min_novelty": gate_params["min_novelty"],
+                "gate/accept_prob": gate_params["accept_prob"],
                 "gate/burn_in": gate_params["burn_in"],
             }
         )
@@ -91,28 +93,13 @@ class SLoRATrainer(Trainer):
 
             z = self.gate.embed(hidden_states, logits, labels)
 
-            if self.accelerator.is_main_process and self.gate.step_count % 20 == 0:
-                print(f"\n[DEBUG] step={self.gate.step_count}")
-                print(f"  z.norm() after embed: {z.norm().item():.6f}")
-
             if self.accelerator.num_processes > 1:
                 torch.distributed.all_reduce(z, op=torch.distributed.ReduceOp.SUM)
-                if self.accelerator.is_main_process and self.gate.step_count % 20 == 0:
-                    print(f"  z.norm() after all_reduce: {z.norm().item():.6f}")
                 z = z / self.accelerator.num_processes
-                if self.accelerator.is_main_process and self.gate.step_count % 20 == 0:
-                    print(f"  z.norm() after div: {z.norm().item():.6f}")
                 z = z / (z.norm() + 1e-12)
-                if self.accelerator.is_main_process and self.gate.step_count % 20 == 0:
-                    print(f"  z.norm() after renorm: {z.norm().item():.6f}")
 
             novelty = self.gate.novelty(z)
             accept = self.gate.accept(novelty)
-
-            if self.accelerator.is_main_process and self.gate.step_count % 20 == 0:
-                W = self.gate.sketch.get_basis()
-                print(f"  W.shape: {W.shape}")
-                print(f"  novelty: {novelty:.6f}, accept: {accept}\n")
 
             if self.accelerator.num_processes > 1:
                 accept_tensor = torch.tensor(

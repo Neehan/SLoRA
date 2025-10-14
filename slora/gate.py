@@ -39,24 +39,29 @@ class HeadGradientGate:
         vocab_size: int,
         m: int,
         k: int,
-        tau_n: float,
+        min_novelty: float,
+        accept_prob: float,
         burn_in: int,
         seed: int,
         device: str,
         reorth_every: int,
         k_topk: int,
     ):
-        assert 0.0 <= tau_n <= 1.0
+        assert 0.0 <= min_novelty <= 1.0
+        assert 0.0 <= accept_prob <= 1.0
         assert k <= m
 
         self.d_hidden = d_hidden
         self.vocab_size = vocab_size
         self.m = m
         self.k = k
-        self.tau_n = tau_n
+        self.min_novelty = min_novelty
+        self.accept_prob = accept_prob
         self.burn_in = burn_in
         self.k_topk = k_topk
         self.device = torch.device(device)
+
+        self.rng = torch.Generator(device=device).manual_seed(seed)
 
         g = torch.Generator(device='cpu').manual_seed(seed)
         self.bucket_h = torch.randint(0, m, (d_hidden,), generator=g, dtype=torch.long).to(device)
@@ -149,10 +154,25 @@ class HeadGradientGate:
         return 1.0 - torch.clamp(torch.tensor(redundancy), min=0.0, max=1.0).item()
 
     def accept(self, novelty: float) -> bool:
-        """Decide whether to accept based on novelty threshold."""
+        """
+        Decide whether to accept based on minimum novelty + probabilistic sampling.
+
+        Accept if:
+        1. During burn-in, OR
+        2. novelty >= min_novelty AND random() < accept_prob
+
+        This gives two-stage gating:
+        - Quality filter: reject batches with novelty < min_novelty
+        - Rate control: among quality batches, accept with probability accept_prob
+        """
         if self.step_count < self.burn_in:
             return True
-        return novelty >= self.tau_n
+
+        if novelty < self.min_novelty:
+            return False
+
+        rand_val = torch.rand(1, generator=self.rng, device=self.device).item()
+        return rand_val < self.accept_prob
 
     def update(self, z: torch.Tensor) -> None:
         """Update streaming basis with normalized sketch."""

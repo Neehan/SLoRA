@@ -52,7 +52,8 @@ slora:
   enable: true
   m: 512
   k: 64
-  tau_n: 0.30
+  min_novelty: 0.10
+  accept_prob: 0.70
   burn_in: 3000
   seed: 0
   reorth_every: 128
