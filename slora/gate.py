@@ -68,7 +68,9 @@ class HeadGradientGate:
         self.device = torch.device(device)
 
         self.current_novelty_threshold = initial_threshold
-        self.acceptance_rate_ema = target_accept_rate
+        self.acceptance_rate_ema = (
+            1.0 if burn_in > 0 else target_accept_rate
+        )  # start as 1.0 for burn in period
         self.acceptance_rate_ema_decay = 0.95
 
         self.rng = torch.Generator(device=device).manual_seed(seed)
@@ -145,7 +147,7 @@ class HeadGradientGate:
         idx = torch.where(
             gold_in_topk.expand(-1, topk_idx.size(1) + 1),
             torch.cat([topk_idx, topk_idx[:, :1]], dim=1),
-            torch.cat([topk_idx, gold], dim=1)
+            torch.cat([topk_idx, gold], dim=1),
         )
 
         sel_logits = torch.gather(logits_flat, 1, idx)
@@ -233,10 +235,7 @@ class HeadGradientGate:
 
     def acceptance_rate(self, global_step: int) -> float:
         """Compute overall acceptance rate."""
-        if global_step < self.burn_in:
-            return 1.0
-        else:
-            return self.acceptance_rate_ema
+        return self.acceptance_rate_ema
 
     def reset(self) -> None:
         """Reset gate to initial state."""
