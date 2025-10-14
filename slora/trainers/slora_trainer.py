@@ -46,9 +46,6 @@ class SLoRATrainer(Trainer):
 
         assert self.model is not None, "Model not initialized"
 
-        if self.args.gradient_checkpointing:
-            self.model._set_static_graph()
-
         # Cache LoRA params once for consistency
         self._cached_lora_params = [
             (n, p)
