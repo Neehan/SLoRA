@@ -234,7 +234,7 @@ class HeadGradientGate:
         elif global_step > self.burn_in:
             progress = (global_step - self.burn_in) / self.burn_in
             target_threshold = self.target_accept_rate + (
-                self.initial_threshold - self.target_accept_rate
+                1.0 - self.target_accept_rate
             ) * (1 - progress)
             self.current_novelty_threshold = target_threshold
 

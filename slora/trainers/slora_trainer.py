@@ -125,11 +125,11 @@ class SLoRATrainer(Trainer):
             loss = loss / self.args.gradient_accumulation_steps
 
         if accept:
-            # since we reject some samples, scale the loss to preserve adam's moments
-            scale_factor = 1 / max(
-                1e-3, self.gate.acceptance_rate(self.state.global_step)
-            )
-            self.accelerator.backward(loss * scale_factor)
+            # # since we reject some samples, scale the loss to preserve adam's moments
+            # scale_factor = 1 / max(
+            #     1e-3, self.gate.acceptance_rate(self.state.global_step)
+            # )
+            self.accelerator.backward(loss)
             self.gate.update(z, count_increment)
 
         # don't cheat by reporting losses for both accepted and rejected batches
