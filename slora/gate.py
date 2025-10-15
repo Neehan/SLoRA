@@ -1,43 +1,17 @@
 import torch
-from slora.sketch import FrequentDirections
-
-
-class CountSketchProjector:
-    """
-    Memory-efficient CountSketch projection (O(d) space, not O(d×m)).
-    Uses feature hashing: z[h(i)] += s(i) * g[i] for i in [0, d).
-    """
-
-    def __init__(self, d: int, m: int, seed: int, device: torch.device):
-        g = torch.Generator(device="cpu").manual_seed(seed)
-        self.bucket = torch.randint(
-            low=0, high=m, size=(d,), generator=g, dtype=torch.long
-        ).to(device)
-        self.sign = (
-            (torch.randint(0, 2, (d,), generator=g, dtype=torch.int8) * 2 - 1).to(
-                torch.int8
-            )
-        ).to(device)
-        self.m = m
-        self.device = device
-
-    def project(self, g_vec: torch.Tensor) -> torch.Tensor:
-        """Project g_vec: (d,) -> z: (m,) in fp32."""
-        z = torch.zeros(self.m, dtype=torch.float32, device=g_vec.device)
-        z.index_add_(0, self.bucket, self.sign.float() * g_vec.float())
-        return z
+from slora.directions import FrequentDirections
+from slora.sketch import TensorSketch
 
 
 class HeadGradientGate:
     """
     Head-gradient proxy gate: gates BEFORE backward pass using only forward quantities.
 
-    Uses TensorSketch to compute sketch of head gradient ∇_W L = Σ_t h_t ⊗ e_t via:
-    1. CountSketch h and e separately to m dimensions
-    2. Convolve via FFT to get sketch of outer product
+    Uses TensorSketch to compute sketch of head gradient ∇_W L = Σ_t h_t ⊗ e_t.
+    Tracks low-rank subspace of accepted gradients via FrequentDirections.
+    Gates based on directional novelty relative to tracked subspace.
 
     Cost: O(batch_size * seq_len * (d_hidden + vocab_size + m log m))
-    No explicit outer product formation.
     """
 
     def __init__(
@@ -75,26 +49,9 @@ class HeadGradientGate:
 
         self.rng = torch.Generator(device=device).manual_seed(seed)
 
-        g = torch.Generator(device="cpu").manual_seed(seed)
-        self.bucket_h = torch.randint(
-            0, m, (d_hidden,), generator=g, dtype=torch.long
-        ).to(device)
-        self.sign_h = (
-            (
-                torch.randint(0, 2, (d_hidden,), generator=g, dtype=torch.int8) * 2 - 1
-            ).to(torch.int8)
-        ).to(device)
-
-        g_e = torch.Generator(device="cpu").manual_seed(seed + 1)
-        self.bucket_e = torch.randint(
-            0, m, (vocab_size,), generator=g_e, dtype=torch.long
-        ).to(device)
-        self.sign_e = (
-            (
-                torch.randint(0, 2, (vocab_size,), generator=g_e, dtype=torch.int8) * 2
-                - 1
-            ).to(torch.int8)
-        ).to(device)
+        self.tensor_sketch = TensorSketch(
+            d1=d_hidden, d2=vocab_size, m=m, seed=seed, device=self.device
+        )
 
         self.sketch = FrequentDirections(
             m, k, reorth_every=reorth_every, device=device, dtype=torch.float32
@@ -102,19 +59,20 @@ class HeadGradientGate:
 
         self.accepted_count = 0
 
-    def embed(
-        self, hidden_states: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor
-    ) -> torch.Tensor:
+    def _prepare_inputs(
+        self,
+        hidden_states: torch.Tensor,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Sketch head gradient via TensorSketch with sparse top-K error approximation.
-
-        Args:
-            hidden_states: (B, T, d_hidden)
-            logits: (B, T, vocab_size)
-            labels: (B, T)
+        Flatten and mask inputs for batch processing.
 
         Returns:
-            Normalized sketch ẑ ∈ R^m
+            h_masked: (N, d_hidden) hidden states with padding zeroed
+            logits_flat: (N, vocab_size)
+            labels_flat: (N,)
+            valid_mask: (N,) boolean mask for non-padding tokens
         """
         B, T, H = hidden_states.shape
         N = B * T
@@ -123,19 +81,27 @@ class HeadGradientGate:
         logits_flat = logits.reshape(N, -1).detach()
         labels_flat = labels.reshape(N)
 
-        # Handle padding tokens: HF uses -100 as ignore index
-        # Replace -100 with 0 for safe indexing, then mask out contribution
         valid_mask = labels_flat >= 0
-        safe_labels = torch.where(
-            valid_mask, labels_flat, torch.zeros_like(labels_flat)
-        )
-
-        # Mask hidden states for padding tokens
         h_masked = h_flat * valid_mask.unsqueeze(1).float()
 
-        s_h = torch.zeros(N, self.m, dtype=torch.float32, device=h_flat.device)
-        s_h.index_add_(
-            1, self.bucket_h, (self.sign_h.float().unsqueeze(0) * h_masked.float())
+        return h_masked, logits_flat, labels_flat, valid_mask
+
+    def _compute_sparse_errors(
+        self,
+        logits_flat: torch.Tensor,
+        labels_flat: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Compute sparse error vectors: e = softmax(logits) - one_hot(label).
+        Keeps only k_topk largest logits + gold label to reduce noise.
+
+        Returns:
+            idx: (N, k_topk+1) selected vocab indices
+            sel_errors: (N, k_topk+1) error values
+        """
+        safe_labels = torch.where(
+            valid_mask, labels_flat, torch.zeros_like(labels_flat)
         )
 
         topk_val, topk_idx = torch.topk(
@@ -155,27 +121,33 @@ class HeadGradientGate:
 
         is_gold = idx == safe_labels.unsqueeze(1)
         sel_errors = sel_probs - is_gold.to(sel_probs.dtype)
-        # Zero out padding tokens so they don't contribute to sketch
         sel_errors = sel_errors * valid_mask.unsqueeze(1).float()
 
-        s_e = torch.zeros(N, self.m, dtype=torch.float32, device=logits_flat.device)
-        sel_signs = self.sign_e[idx]
-        sel_buckets = self.bucket_e[idx]
+        return idx, sel_errors
 
-        weighted = (sel_signs.float() * sel_errors).reshape(-1)
-        buckets_flat = sel_buckets.reshape(-1)
-        batch_idx = (
-            torch.arange(N, device=s_e.device)
-            .unsqueeze(1)
-            .expand(-1, idx.size(1))
-            .reshape(-1)
+    def embed(
+        self, hidden_states: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Sketch head gradient ∇_W L = Σ_t h_t ⊗ e_t via TensorSketch.
+
+        Args:
+            hidden_states: (B, T, d_hidden)
+            logits: (B, T, vocab_size)
+            labels: (B, T) with -100 for padding
+
+        Returns:
+            z ∈ R^m: Normalized sketch of aggregated head gradient
+        """
+        h_masked, logits_flat, labels_flat, valid_mask = self._prepare_inputs(
+            hidden_states, logits, labels
         )
-        s_e.index_put_((batch_idx, buckets_flat), weighted, accumulate=True)
 
-        fft_h = torch.fft.fft(s_h, dim=1)
-        fft_e = torch.fft.fft(s_e, dim=1)
-        z_tokens = torch.fft.ifft(fft_h * fft_e, dim=1).real
+        idx, sel_errors = self._compute_sparse_errors(
+            logits_flat, labels_flat, valid_mask
+        )
 
+        z_tokens = self.tensor_sketch.sketch_batch(h_masked, idx, sel_errors)
         z = z_tokens.sum(dim=0)
         z_norm = z.norm()
 
@@ -243,7 +215,7 @@ class HeadGradientGate:
             ).item()
         elif global_step > self.burn_in:
             steps_since_burnin = global_step - self.burn_in
-            progress_scale = 1.0 / (1 + self.burn_in - steps_since_burnin)
+            progress_scale = 1.0  # / (1 + self.burn_in - steps_since_burnin)
             error = self.acceptance_rate_ema - self.target_accept_rate
             self.current_novelty_threshold += (
                 self.controller_lr * error * progress_scale
@@ -252,7 +224,7 @@ class HeadGradientGate:
                 torch.tensor(self.current_novelty_threshold), min=0.0, max=1.0
             ).item()
 
-    def acceptance_rate(self, global_step: int) -> float:
+    def acceptance_rate(self) -> float:
         """Compute overall acceptance rate."""
         return self.acceptance_rate_ema
 

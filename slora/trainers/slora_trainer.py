@@ -113,7 +113,12 @@ class SLoRATrainer(Trainer):
         inputs["output_hidden_states"] = True
 
         with self.compute_loss_context_manager():
-            loss, outputs = self.compute_loss(model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch)
+            loss, outputs = self.compute_loss(
+                model,
+                inputs,
+                return_outputs=True,
+                num_items_in_batch=num_items_in_batch,
+            )
             hidden_states = outputs.hidden_states[-1]
             logits = outputs.logits
 
@@ -139,7 +144,9 @@ class SLoRATrainer(Trainer):
                 accept = bool(accept_tensor.item())
 
         self.last_novelty = novelty
-        self.novelty_ema = (1 - self.ema_alpha) * self.novelty_ema + self.ema_alpha * novelty
+        self.novelty_ema = (
+            1 - self.ema_alpha
+        ) * self.novelty_ema + self.ema_alpha * novelty
         self.last_accept = int(accept)
 
         count_increment = 1.0 / self.accelerator.num_processes
@@ -171,9 +178,7 @@ class SLoRATrainer(Trainer):
             logs["gate/novelty_avg"] = self.novelty_ema
             logs["gate/current_novelty_threshold"] = self.gate.current_novelty_threshold
             logs["gate/accept"] = self.last_accept
-            logs["gate/acceptance_rate"] = self.gate.acceptance_rate(
-                self.state.global_step
-            )
+            logs["gate/acceptance_rate"] = self.gate.acceptance_rate()
         super().log(logs, start_time)
 
     def _save_checkpoint(self, model, trial, metrics=None):
@@ -182,7 +187,7 @@ class SLoRATrainer(Trainer):
 
         if self.gate is not None and checkpoint_folder is not None:
             gate_metrics = {
-                "acceptance_rate": self.gate.acceptance_rate(self.state.global_step),
+                "acceptance_rate": self.gate.acceptance_rate(),
                 "accepted_steps": self.gate.accepted_count,
                 "total_steps": self.state.global_step,
                 "rejected_steps": self.state.global_step - self.gate.accepted_count,
