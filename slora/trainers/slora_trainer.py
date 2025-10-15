@@ -107,6 +107,8 @@ class SLoRATrainer(Trainer):
             logits = outputs.logits
             loss = outputs.loss
 
+        del inputs
+
         with torch.no_grad():
             z = self.gate.embed(hidden_states, logits, labels)
 
@@ -131,7 +133,12 @@ class SLoRATrainer(Trainer):
 
         count_increment = 1.0 / self.accelerator.num_processes
 
-        if self.args.gradient_accumulation_steps > 1:
+        if self.args.n_gpu > 1:
+            loss = loss.mean()
+
+        if (
+            not self.model_accepts_loss_kwargs or num_items_in_batch is None
+        ) and self.compute_loss_func is None:
             loss = loss / self.args.gradient_accumulation_steps
 
         if accept:
