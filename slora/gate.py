@@ -54,6 +54,7 @@ class HeadGradientGate:
         reorth_every: int,
         k_topk: int,
         initial_threshold: float,
+        random: bool,
     ):
         assert k <= m
 
@@ -66,6 +67,7 @@ class HeadGradientGate:
         self.burn_in = burn_in
         self.k_topk = k_topk
         self.device = torch.device(device)
+        self.random = random
 
         self.current_novelty_threshold = initial_threshold
         self.acceptance_rate_ema = 1.0  # start as 1.0 for burn in period
@@ -201,9 +203,18 @@ class HeadGradientGate:
         Stochastic acceptance based on novelty score relative to threshold.
         During burn-in, accept all updates.
         After burn-in, use sigmoid for smooth probabilistic gating (leaky).
+        If random=True, ignore novelty and accept based on target rate only.
         """
         if global_step < self.burn_in:
             return True
+
+        # if random, accept based on target rate only
+        # this is an ablation to see if novelty helps at all!
+        if self.random:
+            return (
+                torch.rand(1, generator=self.rng, device=self.device).item()
+                < self.target_accept_rate
+            )
 
         gap = novelty - self.current_novelty_threshold
         acceptance_prob = torch.sigmoid(torch.tensor(20.0 * gap)).item()
@@ -234,7 +245,9 @@ class HeadGradientGate:
             steps_since_burnin = global_step - self.burn_in
             progress_scale = 1.0 / (1 + self.burn_in - steps_since_burnin)
             error = self.acceptance_rate_ema - self.target_accept_rate
-            self.current_novelty_threshold += self.controller_lr * error * progress_scale
+            self.current_novelty_threshold += (
+                self.controller_lr * error * progress_scale
+            )
             self.current_novelty_threshold = torch.clamp(
                 torch.tensor(self.current_novelty_threshold), min=0.0, max=1.0
             ).item()

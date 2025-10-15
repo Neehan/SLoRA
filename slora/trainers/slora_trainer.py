@@ -63,6 +63,7 @@ class SLoRATrainer(Trainer):
             "device": str(device),
             "reorth_every": self.gate_config["reorth_every"],
             "k_topk": self.gate_config["k_topk"],
+            "random": self.gate_config["random"],
         }
 
         self.gate = HeadGradientGate(**gate_params)
@@ -87,6 +88,13 @@ class SLoRATrainer(Trainer):
     ) -> torch.Tensor:
         """
         Override training step to gate before backward.
+
+        WARNING: This carefully reproduces the base Trainer's training_step behavior
+        with gating logic inserted. Any changes must maintain equivalence to base trainer
+        when gate is disabled. Key invariants:
+        - Loss normalization by gradient_accumulation_steps (line 139)
+        - Multi-GPU loss averaging for logging (line 141-142)
+        - Proper detachment of returned loss (line 157)
         """
         if self.gate_config is not None and self.gate is None:
             self._initialize_gate()

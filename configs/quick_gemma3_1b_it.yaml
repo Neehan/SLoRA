@@ -56,6 +56,7 @@ slora:
   seed: 0
   reorth_every: 64
   k_topk: 64 # top-k logits for sparse sketch
+  random: true
 
 data:
   dataset_name: allenai/tulu-3-sft-mixture

@@ -217,6 +217,7 @@ def main():
             "seed": config["slora"]["seed"],
             "reorth_every": config["slora"]["reorth_every"],
             "k_topk": config["slora"]["k_topk"],
+            "random": config["slora"]["random"],
         }
 
     data_collator = DataCollatorForLanguageModeling(
