@@ -230,9 +230,12 @@ class HeadGradientGate:
             self.current_novelty_threshold = torch.clamp(
                 torch.tensor(self.current_novelty_threshold), min=0.0, max=1.0
             ).item()
-        elif global_step > self.burn_in:
-            progress = (global_step - self.burn_in) / self.burn_in
-            self.current_novelty_threshold = 1.0 - (1.0 - self.target_accept_rate) * progress
+        elif global_step > self.burn_in:  # smooth transition to target acceptance rate
+            error = self.acceptance_rate_ema - self.target_accept_rate
+            self.current_novelty_threshold += self.controller_lr * error * 0.2
+            self.current_novelty_threshold = torch.clamp(
+                torch.tensor(self.current_novelty_threshold), min=0.0, max=1.0
+            ).item()
 
     def acceptance_rate(self, global_step: int) -> float:
         """Compute overall acceptance rate."""

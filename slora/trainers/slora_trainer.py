@@ -2,6 +2,7 @@ import torch
 from transformers import Trainer
 from typing import Optional, Dict, Any
 from slora.gate import HeadGradientGate
+from slora.optimizers import GatedOptimizer, GatedLRScheduler
 import json
 from pathlib import Path
 
@@ -30,6 +31,14 @@ class SLoRATrainer(Trainer):
 
         self.novelty_history = []
         self.accept_history = []
+
+    def create_optimizer_and_scheduler(self, num_training_steps: int) -> None:
+        """Wrap optimizer and scheduler with gating logic."""
+        super().create_optimizer_and_scheduler(num_training_steps)
+        if self.gate_config is not None:
+            self.optimizer = GatedOptimizer(self.optimizer)  # type: ignore
+            if self.lr_scheduler is not None:
+                self.lr_scheduler = GatedLRScheduler(self.lr_scheduler)  # type: ignore
 
     def _initialize_gate(self) -> None:
         """Initialize gate after model is set up."""
@@ -83,6 +92,11 @@ class SLoRATrainer(Trainer):
         if self.gate is None:
             return super().training_step(model, inputs, num_items_in_batch)
 
+        assert isinstance(self.optimizer, GatedOptimizer)
+        assert self.lr_scheduler is None or isinstance(
+            self.lr_scheduler, GatedLRScheduler
+        )
+
         model.train()
         inputs = self._prepare_inputs(inputs)
         labels = inputs["labels"]
@@ -115,26 +129,19 @@ class SLoRATrainer(Trainer):
         self.novelty_history.append(novelty)
         self.accept_history.append(int(accept))
 
-        count_increment = (
-            1.0 / self.accelerator.num_processes
-            if self.accelerator.num_processes > 1
-            else 1.0
-        )
+        count_increment = 1.0 / self.accelerator.num_processes
 
         if self.args.gradient_accumulation_steps > 1:
             loss = loss / self.args.gradient_accumulation_steps
 
         if accept:
-            # # since we reject some samples, scale the loss to preserve adam's moments
-            # scale_factor = 1 / max(
-            #     1e-3, self.gate.acceptance_rate(self.state.global_step)
-            # )
             self.accelerator.backward(loss)
             self.gate.update(z, count_increment)
+            self.optimizer.mark_accept()
+            if self.lr_scheduler is not None:
+                self.lr_scheduler.mark_accept()
 
-        # don't cheat by reporting losses for both accepted and rejected batches
         ret_loss = loss.detach()
-
         self.gate.step(self.state.global_step, accept)
 
         return ret_loss
