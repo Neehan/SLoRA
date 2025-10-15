@@ -47,15 +47,15 @@ lora:
 
 slora:
   enable: true
-  m: 512
-  k: 64
+  m: 512 # dimension of projected space
+  k: 64 # rank
   target_accept_rate: 0.40
   initial_threshold: 0.05
   controller_lr: 0.01
   burn_in: 200
   seed: 0
   reorth_every: 50
-  k_topk: 64
+  k_topk: 64 # top-k logits for sparse sketch
 
 data:
   dataset_name: allenai/tulu-3-sft-mixture
