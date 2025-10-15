@@ -67,7 +67,6 @@ class HeadGradientGate:
         self.k_topk = k_topk
         self.device = torch.device(device)
 
-        self.initial_threshold = initial_threshold
         self.current_novelty_threshold = initial_threshold
         self.acceptance_rate_ema = 1.0  # start as 1.0 for burn in period
         self.acceptance_rate_ema_decay = 0.95
@@ -233,10 +232,7 @@ class HeadGradientGate:
             ).item()
         elif global_step > self.burn_in:
             progress = (global_step - self.burn_in) / self.burn_in
-            target_threshold = self.target_accept_rate + (
-                1.0 - self.target_accept_rate
-            ) * (1 - progress)
-            self.current_novelty_threshold = target_threshold
+            self.current_novelty_threshold = 1.0 - (1.0 - self.target_accept_rate) * progress
 
     def acceptance_rate(self, global_step: int) -> float:
         """Compute overall acceptance rate."""
