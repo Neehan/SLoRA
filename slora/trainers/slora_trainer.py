@@ -29,8 +29,10 @@ class SLoRATrainer(Trainer):
         self.gate: Optional[HeadGradientGate] = None
         self.gate_config = gate_config
 
-        self.novelty_history = []
-        self.accept_history = []
+        self.last_novelty = 0.0
+        self.novelty_ema = 0.0
+        self.last_accept = 1
+        self.ema_alpha = 0.01
 
     def create_optimizer_and_scheduler(self, num_training_steps: int) -> None:
         """Wrap optimizer and scheduler with gating logic."""
@@ -100,12 +102,12 @@ class SLoRATrainer(Trainer):
         model.train()
         inputs = self._prepare_inputs(inputs)
         labels = inputs["labels"]
+        inputs["output_hidden_states"] = True
 
         with self.compute_loss_context_manager():
-            outputs = model(**inputs, output_hidden_states=True, return_dict=True)
+            loss, outputs = self.compute_loss(model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch)
             hidden_states = outputs.hidden_states[-1]
             logits = outputs.logits
-            loss = outputs.loss
 
         del inputs
 
@@ -128,18 +130,19 @@ class SLoRATrainer(Trainer):
                 )
                 accept = bool(accept_tensor.item())
 
-        self.novelty_history.append(novelty)
-        self.accept_history.append(int(accept))
+        self.last_novelty = novelty
+        self.novelty_ema = (1 - self.ema_alpha) * self.novelty_ema + self.ema_alpha * novelty
+        self.last_accept = int(accept)
 
         count_increment = 1.0 / self.accelerator.num_processes
-
-        if self.args.n_gpu > 1:
-            loss = loss.mean()
 
         if (
             not self.model_accepts_loss_kwargs or num_items_in_batch is None
         ) and self.compute_loss_func is None:
             loss = loss / self.args.gradient_accumulation_steps
+
+        if self.args.n_gpu > 1:
+            loss = loss.mean()
 
         if accept:
             self.accelerator.backward(loss)
@@ -156,17 +159,10 @@ class SLoRATrainer(Trainer):
     def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
         """Add gate statistics to logs."""
         if self.gate is not None:
-            avg_novelty = (
-                sum(self.novelty_history) / len(self.novelty_history)
-                if self.novelty_history
-                else 0.0
-            )
-            logs["gate/novelty"] = (
-                self.novelty_history[-1] if self.novelty_history else 0.0
-            )
-            logs["gate/novelty_avg"] = avg_novelty
+            logs["gate/novelty"] = self.last_novelty
+            logs["gate/novelty_avg"] = self.novelty_ema
             logs["gate/current_novelty_threshold"] = self.gate.current_novelty_threshold
-            logs["gate/accept"] = self.accept_history[-1] if self.accept_history else 1
+            logs["gate/accept"] = self.last_accept
             logs["gate/acceptance_rate"] = self.gate.acceptance_rate(
                 self.state.global_step
             )
@@ -177,19 +173,14 @@ class SLoRATrainer(Trainer):
         checkpoint_folder = super()._save_checkpoint(model, trial)
 
         if self.gate is not None and checkpoint_folder is not None:
-            avg_novelty = (
-                sum(self.novelty_history) / len(self.novelty_history)
-                if self.novelty_history
-                else 0.0
-            )
             gate_metrics = {
                 "acceptance_rate": self.gate.acceptance_rate(self.state.global_step),
                 "accepted_steps": self.gate.accepted_count,
                 "total_steps": self.state.global_step,
                 "rejected_steps": self.state.global_step - self.gate.accepted_count,
-                "avg_novelty": avg_novelty,
-                "novelty_history": self.novelty_history,
-                "accept_history": self.accept_history,
+                "last_novelty": self.last_novelty,
+                "novelty_avg": self.novelty_ema,
+                "last_accept": self.last_accept,
             }
 
             gate_file = Path(checkpoint_folder) / "gate_metrics.json"
