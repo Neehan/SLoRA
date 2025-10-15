@@ -52,9 +52,9 @@ slora:
   target_accept_rate: 0.40
   initial_threshold: 0.05
   controller_lr: 0.01
-  burn_in: 200
+  burn_in: 300
   seed: 0
-  reorth_every: 50
+  reorth_every: 64
   k_topk: 64 # top-k logits for sparse sketch
 
 data:
