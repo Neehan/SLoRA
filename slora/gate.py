@@ -69,7 +69,7 @@ class HeadGradientGate:
 
         self.current_novelty_threshold = initial_threshold
         self.acceptance_rate_ema = 1.0  # start as 1.0 for burn in period
-        self.acceptance_rate_ema_decay = 0.97
+        self.acceptance_rate_ema_decay = 0.95
 
         self.rng = torch.Generator(device=device).manual_seed(seed)
 

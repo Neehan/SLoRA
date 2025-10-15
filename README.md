@@ -23,7 +23,7 @@ This approach differs fundamentally from loss-based methods (e.g., Selective Bac
 **Head-gradient proxy gating (gates BEFORE backward):**
 
 1. **Forward pass**: Collect hidden states `h_t ∈ R^H` (pre-classifier) and logits `p_t ∈ R^V` for each token
-2. **Error vector**: Compute `e_t = softmax(p_t) - y_t` (one-hot label), sparsified to top-K logits + gold (K=64)
+2. **Error vector**: Compute `e_t = softmax(p_t) - y_t` (one-hot label), sparsified to top-K logits + gold (K=64, deduplicated)
 3. **TensorSketch**: For each token, sketch outer product `h_t ⊗ e_t` via:
    - CountSketch `h_t` → `s_h ∈ R^m`
    - CountSketch `e_t` → `s_e ∈ R^m`
@@ -31,10 +31,11 @@ This approach differs fundamentally from loss-based methods (e.g., Selective Bac
    - Accumulate: `z = Σ_t z_t`, then normalize `ẑ = z/|z|`
 4. **Streaming basis**: Maintain rank-k orthonormal basis `W ∈ R^{m×k}` (k=64) of accepted sketches via Frequent Directions
 5. **Novelty score**: `nov = 1 - |W^T ẑ|²` (directional redundancy, in [0,1])
-6. **Gate decision**: Accept with probability `σ(β(nov - τ))` where τ adapts via EMA to maintain target acceptance rate
+6. **Stochastic gate**: Accept with probability `σ(20·(nov - τ))` where τ adapts via short-memory EMA (decay=0.95) to maintain target acceptance rate
 7. **Accept**: Run backward + optimizer step, update basis `W ← FD(W, ẑ)`
-8. **Reject**: Skip backward entirely, zero grads
-9. **Burn-in**: Always accept first S steps (2k-3k) to initialize basis
+8. **Reject**: Skip backward, preserve accumulated gradients
+9. **Burn-in**: Always accept first S steps (200-3000) to initialize basis
+10. **Threshold clamping**: Keep τ ∈ [0, 1] to prevent runaway
 
 **Key advantage:** Skips backward pass on redundant batches using only forward quantities (h, p, y). Cost: O(B·T·(H + K + m log m)) vs O(B·T·H·V) for full head gradient.
 
@@ -53,14 +54,11 @@ SLoRA/
 │   │   └── slora_trainer.py    # HF Trainer with pre-backward gating
 │   └── utils/                  # logging, seeding, timing
 ├── configs/
-│   ├── quick_gemma3_1b.yaml    # Quick test (100k samples, 48h)
-│   ├── full_gemma3_12b.yaml    # Full run (400k samples, QLoRA)
-│   ├── baseline.yaml           # Baseline LoRA (no gating)
+│   ├── quick_gemma3_1b_it.yaml # Quick test (1k samples)
+│   ├── full_gemma3_12b_it.yaml # Full run (400k samples, QLoRA)
 │   └── accelerate_config.yaml  # Multi-GPU config
 ├── scripts/
 │   ├── train_slora.py          # Main training script
-│   ├── quick_test.sh           # SLURM launcher (baseline + SLoRA)
-│   ├── full_gemma_12b.sh       # Full experiment SLURM script
 │   └── analyze_results.py      # Compare baseline vs SLoRA
 ├── data/                       # Dataset cache (auto-created)
 ├── reports/                    # Analysis outputs
@@ -89,51 +87,47 @@ pip install -e .
 **Requirements:**
 - Python ≥3.10
 - PyTorch ≥2.1 with CUDA 12.1
-- 4-8× GPUs (L40/A100) depending on model size
+- 4× GPUs (L40/A100) for DDP training
 - Packages: transformers, accelerate, peft, bitsandbytes, datasets, wandb
 
 ---
 
 ## Quick Start
 
-### 1. Quick Test (48h, 100k samples, Gemma-2-2B)
+### 1. Quick Test (1k samples, Gemma-3-1B)
 
-**Goal:** Validate that SLoRA reaches baseline performance with ≥30% fewer accepted steps.
+**Goal:** Validate that SLoRA reaches baseline performance with ≥60% fewer accepted steps (40% accept rate).
 
 ```bash
-# Via SLURM (runs baseline + SLoRA sequentially)
-sbatch scripts/quick_test.sh
-
-# Or run directly
+# Run with accelerate
 accelerate launch --config_file configs/accelerate_config.yaml \
     scripts/train_slora.py \
-    --config configs/baseline.yaml
-
-accelerate launch --config_file configs/accelerate_config.yaml \
-    scripts/train_slora.py \
-    --config configs/quick_gemma3_1b.yaml
+    --config configs/quick_gemma3_1b_it.yaml
 ```
 
-**Pass criteria:** SLoRA validation loss ≤ +0.5% of baseline at ≥30% fewer accepted steps.
+**Pass criteria:** SLoRA validation loss ≤ +0.5% of baseline at ≥60% fewer accepted steps.
 
 ### 2. Analyze Results
 
 ```bash
 python scripts/analyze_results.py \
-    --baseline outputs/baseline_gemma_4b \
-    --slora outputs/quick_gemma_4b \
+    --baseline outputs/baseline_gemma3_1b_it \
+    --slora outputs/quick_gemma3_1b_it \
     --output reports/quick_analysis.md
 ```
 
 Check W&B project `slora` for detailed metrics:
 - `gate/novelty`: per-step novelty scores
-- `gate/acceptance_rate`: running acceptance rate
+- `gate/acceptance_rate`: running acceptance rate (EMA-based, short memory)
+- `gate/current_novelty_threshold`: adaptive threshold
 - `train_loss` vs `gate/accepted_steps`: token efficiency
 
-### 3. Full Experiment (96h, 400k samples, Gemma-2-9B + QLoRA)
+### 3. Full Experiment (400k samples, Gemma-3-12B + QLoRA)
 
 ```bash
-sbatch scripts/full_gemma_12b.sh
+accelerate launch --config_file configs/accelerate_config.yaml \
+    scripts/train_slora.py \
+    --config configs/full_gemma3_12b_it.yaml
 ```
 
 ---
@@ -147,18 +141,18 @@ from slora.gate import HeadGradientGate
 
 # Initialize gate
 gate = HeadGradientGate(
-    d_hidden=4096,           # Model hidden size
-    vocab_size=50257,        # Tokenizer vocab size
-    m=512,                   # TensorSketch dimension
-    k=64,                    # Rank of streaming basis
-    target_novelty=0.30,        # Target acceptance rate
-    target_novelty_scaler=10.0, # Sigmoid steepness β
-    novelty_ema_rate=0.01,    # EMA learning rate for threshold adaptation
-    burn_in=2000,            # Always accept first N steps
+    d_hidden=4096,              # Model hidden size
+    vocab_size=50257,           # Tokenizer vocab size
+    m=512,                      # TensorSketch dimension
+    k=64,                       # Rank of streaming basis
+    target_accept_rate=0.40,    # Target acceptance rate
+    initial_threshold=0.05,     # Initial threshold
+    controller_lr=0.01,         # Controller learning rate
+    burn_in=200,                # Always accept first N steps
     seed=0,
     device='cuda',
-    reorth_every=128,
-    k_topk=64,               # Top-K logits for sparse sketch
+    reorth_every=50,
+    k_topk=64,                  # Top-K logits for sparse sketch
 )
 
 # Inside training loop (pre-backward gating)
@@ -170,19 +164,20 @@ with torch.no_grad():
 
     z = gate.embed(h, logits, labels)
     novelty = gate.novelty(z)
-    accept = gate.accept(novelty)
+    accept = gate.accept(novelty, global_step=step)
 
 if accept:
-    outputs = model(**inputs)  # Re-run forward with grad
+    # Re-run forward with grad (or reuse if single forward)
+    outputs = model(**inputs)
     loss = outputs.loss
     loss.backward()
     optimizer.step()
-    gate.update(z)
+    gate.update(z, count_increment=1.0)
 
+gate.step(step, accept)
 optimizer.zero_grad()
-gate.step()
 
-print(f"Acceptance rate: {gate.acceptance_rate():.2%}")
+print(f"Acceptance rate: {gate.acceptance_rate_ema:.2%}")
 ```
 
 ### HF Trainer Integration
@@ -193,12 +188,12 @@ from slora import SLoRATrainer
 gate_config = {
     "m": 512,
     "k": 64,
-    "target_novelty": 0.30,
-    "target_novelty_scaler": 10.0,
-    "novelty_ema_rate": 0.01,
-    "burn_in": 2000,
+    "target_accept_rate": 0.40,
+    "initial_threshold": 0.05,
+    "controller_lr": 0.01,
+    "burn_in": 200,
     "seed": 0,
-    "reorth_every": 128,
+    "reorth_every": 50,
     "k_topk": 64,
 }
 
@@ -234,35 +229,69 @@ All configs are in `configs/*.yaml`. Key parameters:
 - `slora.enable`: Enable/disable gating (baseline if False)
 - `slora.m`: TensorSketch dimension (512, must be power of 2 for FFT)
 - `slora.k`: Rank of streaming basis (64)
-- `slora.k_topk`: Top-K logits for sparse error sketch (64, 32-128 range)
-- `slora.target_novelty`: Target acceptance rate (0.2-0.4, default 0.30)
-- `slora.target_novelty_scaler`: Sigmoid steepness β (5-20, default 10.0)
-- `slora.novelty_ema_rate`: EMA learning rate for threshold adaptation (0.005-0.02, default 0.01)
-- `slora.burn_in`: Steps to always accept (2000-3000)
-- `slora.reorth_every`: Re-orthonormalize sketch frequency (128)
+- `slora.k_topk`: Top-K logits for sparse error sketch (64)
+- `slora.target_accept_rate`: Target acceptance rate (0.3-0.5, default 0.40)
+- `slora.initial_threshold`: Initial novelty threshold (0.05)
+- `slora.controller_lr`: Integral controller learning rate (0.01)
+- `slora.burn_in`: Steps to always accept (200-3000)
+- `slora.reorth_every`: Re-orthonormalize sketch frequency (50-128)
+
+**Key changes from old config:**
+- Removed `novelty_sensitivity` (now fixed sigmoid steepness=20)
+- Removed `novelty_ema` and `novelty_ema_decay` (not used)
+- Added `initial_threshold` (replaces hardcoded 0.5)
+- `target_accept_rate` now 0.40 (was 0.70) for real speedup
 
 ### Data
 - `data.dataset_name`: HF dataset (e.g., `allenai/tulu-3-sft-mixture`)
-- `data.train_split`: Training split with slice (e.g., `train[:100000]`)
-- `data.max_seq_length`: Max sequence length (2048-4096)
+- `data.train_split`: Training split with slice (e.g., `train[:1000]`)
+- `data.max_seq_length`: Max sequence length (256-4096)
 
 ---
 
 ## Hyperparameter Tuning
 
 **Start with defaults:**
-- `target_novelty=0.30`, `target_novelty_scaler=10.0`, `novelty_ema_rate=0.01`, `m=512`, `k=64`, `burn_in=2000`
+- `target_accept_rate=0.40`, `controller_lr=0.01`, `initial_threshold=0.05`, `m=512`, `k=64`, `burn_in=200`
 
 **If acceptance rate doesn't converge to target:**
-- Increase `novelty_ema_rate` to 0.02 (faster adaptation)
-- Decrease `target_novelty_scaler` to 5.0 (softer sigmoid)
-
-**If acceptance is too noisy:**
-- Decrease `novelty_ema_rate` to 0.005 (slower, more stable)
-- Increase `target_novelty_scaler` to 15-20 (sharper sigmoid)
+- Increase `controller_lr` to 0.02 (faster adaptation)
+- Adjust `initial_threshold` closer to expected mean novelty
 
 **If early instability:**
-- Increase `burn_in` to 3000-5000
+- Increase `burn_in` to 3000 for larger models
+
+**If you want more aggressive gating:**
+- Lower `target_accept_rate` to 0.30 (70% rejection)
+
+---
+
+## Implementation Details
+
+### Gradient Accumulation Correctness
+- Rejected steps skip backward but **preserve accumulated gradients**
+- No `zero_grad()` on reject → multi-step accumulation works correctly
+- Optimizer steps normally after accumulation window (even if last micro-batch rejected)
+
+### DDP Loss Handling
+- Loss is computed once per step (single forward pass)
+- Accepted: contribute full loss to DDP average
+- Rejected: contribute 0.0 to DDP average
+- Manual all_reduce → average across GPUs for fair logging
+
+### Acceptance Rate Tracking
+- Short-memory EMA (decay=0.95, ~20-step window)
+- Each GPU increments count by `1/num_processes` to avoid 4× inflation
+- Controller uses EMA not cumulative rate → responds quickly to distribution changes
+
+### Gold Token Deduplication
+- Check if gold token already in top-K logits
+- If duplicate, pad with first top-K token instead of adding gold twice
+- Prevents softmax skew in TensorSketch
+
+### Threshold Stability
+- Clamp `current_novelty_threshold` to [0, 1] after each update
+- Prevents runaway divergence
 
 ---
 
@@ -273,14 +302,13 @@ All configs are in `configs/*.yaml`. Key parameters:
 - Final loss within 0.5% of baseline at fewer accepted steps = success
 
 ### Secondary (optional)
-- Wall-clock time (add loss-floor gate for skip-backward speedup)
+- Wall-clock time (expect ~1.5× speedup at 40% accept rate due to backward skip)
 - Downstream task performance (MT-Bench, AlpacaEval)
 
 ### Ablations
 1. Baseline LoRA (no gating)
 2. SLoRA (novelty only)
-3. Loss-floor only (selective backprop style)
-4. SLoRA + loss-floor (combined)
+3. Different acceptance rates (0.3, 0.4, 0.5)
 
 ---
 
@@ -289,29 +317,39 @@ All configs are in `configs/*.yaml`. Key parameters:
 Metrics logged to W&B:
 - `gate/novelty`: Per-step novelty score
 - `gate/accept`: Binary accept/reject (1/0)
-- `gate/acceptance_rate`: Running acceptance rate
+- `gate/acceptance_rate`: Cumulative acceptance rate
+- `gate/acceptance_rate_ema`: Short-memory EMA (actual controller input)
+- `gate/current_novelty_threshold`: Adaptive threshold
 - `gate/accepted_steps`: Total optimizer steps taken
 - `gate/total_steps`: Total batches processed
-- `train_loss`, `eval_loss`: Standard training metrics
+- `train_loss`, `eval_loss`: Standard training metrics (only accepted steps contribute)
 
 **Verify correctness:**
 - Novelty should be ~1.0 early in training (basis is empty)
 - Novelty decreases over time as basis fills
-- Acceptance rate stabilizes after burn-in
-- Accepted steps << total steps
+- Acceptance rate EMA stabilizes around target after burn-in
+- Threshold adapts smoothly, stays in [0, 1]
+- Train loss matches baseline (not 4× inflated or deflated)
 
 ---
 
 ## Troubleshooting
 
-**No LoRA gradients found:**
-- Check that PEFT model is loaded correctly
-- Verify `lora.target_modules` matches model architecture
-
 **Acceptance rate = 100%:**
 - Basis not updating or threshold too low
 - Check `gate/novelty` is decreasing over time
-- Decrease `target_novelty` (target rate) or increase `target_novelty_scaler`
+- Decrease `target_accept_rate` or increase `burn_in`
+
+**Acceptance rate oscillates wildly:**
+- Controller overshooting
+- Decrease `controller_lr` to 0.005
+
+**Loss 4× too high or too low:**
+- DDP loss aggregation issue
+- Verify manual all_reduce in `training_step`
+
+**Gradient accumulation broken:**
+- Check rejected steps don't call `zero_grad()`
 
 **OOM errors:**
 - Reduce `per_device_train_batch_size`
@@ -349,15 +387,14 @@ Metrics logged to W&B:
 ## Research Roadmap
 
 **Immediate (validation):**
-1. Baseline comparison: verify ≥30% token efficiency improvement at comparable loss
-2. Ablation studies: novelty-only vs loss-floor vs combined
-3. Hyperparameter sensitivity: target_novelty, target_novelty_scaler, k, burn_in
+1. Baseline comparison: verify ≥60% token efficiency improvement at comparable loss
+2. Ablation studies: different acceptance rates (0.3, 0.4, 0.5)
+3. Hyperparameter sensitivity: controller_lr, burn_in, threshold init
 
 **Next steps (if validation succeeds):**
 1. Scale to 7B-13B models with QLoRA
 2. Multiple datasets: instruction tuning, domain adaptation
 3. Downstream evaluation: MT-Bench, AlpacaEval, MMLU
-4. Loss-floor gate for wall-clock speedup
 
 **Out of scope (keep simple):**
 - Multi-metric scoring functions
