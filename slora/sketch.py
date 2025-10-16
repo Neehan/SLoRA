@@ -98,4 +98,8 @@ class TensorSketch:
         fft_e = torch.fft.fft(s_e, dim=1)
         z_batch = torch.fft.ifft(fft_h * fft_e, dim=1).real
 
+        # Scale by 1/√m to preserve inner products: E[⟨sketch(a⊗b), sketch(a'⊗b')⟩] = ⟨a,a'⟩⟨b,b'⟩
+        # Without this, FFT convolution inflates norms by √m and inner products by m
+        z_batch /= self.m ** 0.5
+
         return z_batch
