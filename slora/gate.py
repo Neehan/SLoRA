@@ -132,13 +132,22 @@ class HeadGradientGate:
         sel_probs_with_rest = torch.cat([sel_probs, rest_prob], dim=1)
 
         is_gold = idx == safe_labels.unsqueeze(1)
-        is_gold_with_rest = torch.cat([is_gold, torch.zeros_like(rest_prob, dtype=torch.bool)], dim=1)
+        is_gold_with_rest = torch.cat(
+            [is_gold, torch.zeros_like(rest_prob, dtype=torch.bool)], dim=1
+        )
 
-        sel_errors = sel_probs_with_rest - is_gold_with_rest.to(sel_probs_with_rest.dtype)
+        sel_errors = sel_probs_with_rest - is_gold_with_rest.to(
+            sel_probs_with_rest.dtype
+        )
         sel_errors = sel_errors * valid_mask.unsqueeze(1).float()
 
-        idx_with_rest = torch.cat([idx, torch.zeros_like(rest_prob, dtype=torch.long)], dim=1)
-        is_rest = torch.cat([torch.zeros_like(is_gold), torch.ones_like(rest_prob, dtype=torch.bool)], dim=1)
+        idx_with_rest = torch.cat(
+            [idx, torch.zeros_like(rest_prob, dtype=torch.long)], dim=1
+        )
+        is_rest = torch.cat(
+            [torch.zeros_like(is_gold), torch.ones_like(rest_prob, dtype=torch.bool)],
+            dim=1,
+        )
 
         return idx_with_rest, sel_errors, is_rest
 
@@ -166,7 +175,9 @@ class HeadGradientGate:
 
         non_rest_mask = ~is_rest
         idx_filtered = torch.where(non_rest_mask, idx, torch.zeros_like(idx))
-        sel_errors_filtered = torch.where(non_rest_mask, sel_errors, torch.zeros_like(sel_errors))
+        sel_errors_filtered = torch.where(
+            non_rest_mask, sel_errors, torch.zeros_like(sel_errors)
+        )
 
         z_tokens = self.sketch.sketch_batch(h_masked, idx_filtered, sel_errors_filtered)
         z = z_tokens[valid_mask].sum(dim=0)
@@ -197,7 +208,7 @@ class HeadGradientGate:
         self.novelty_ema = (
             self.ema_decay * self.novelty_ema + (1 - self.ema_decay) * raw_dir_novel
         )
-        return raw_dir_novel  # / (self.novelty_ema + 1e-8)
+        return raw_dir_novel * z_norm.item() / (self.novelty_ema + 1e-8)
 
     def accept(self, novelty: float, global_step: int) -> bool:
         """
