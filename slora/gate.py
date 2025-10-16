@@ -44,7 +44,8 @@ class HeadGradientGate:
         self.random = random
 
         self.novelty_ema = initial_threshold
-        self.current_novelty_threshold = self.novelty_ema  # start at initial threshold
+        self.novelty_sq_ema = initial_threshold**2
+        self.current_novelty_threshold = 0.5  # start at median
         self.acceptance_rate_ema = 1.0  # start as 1.0 for burn in period
         self.ema_decay = 0.95
 
@@ -154,11 +155,26 @@ class HeadGradientGate:
         # don't normalize to handle multi gpu summing correctly
         return z
 
-    def novelty(self, z: torch.Tensor) -> float:
-        """
-        Compute novelty score normalized by EMA.
-        Updates novelty_ema internally.
-        """
+    def _compute_ema_zscore(self, x: float, t: int) -> float:
+        """Compute bias-corrected EMA z-score using global_step t."""
+        # Update EMAs
+        self.novelty_ema = self.ema_decay * self.novelty_ema + (1 - self.ema_decay) * x
+        self.novelty_sq_ema = (
+            self.ema_decay * self.novelty_sq_ema + (1 - self.ema_decay) * x**2
+        )
+
+        # Bias correction
+        bias_correction = 1 - self.ema_decay**t
+        m_hat = self.novelty_ema / bias_correction
+        v_hat = self.novelty_sq_ema / bias_correction
+
+        # Z-score
+        variance = v_hat - m_hat**2
+        z_score = (x - m_hat) / ((variance + 1e-8) ** 0.5)
+        return z_score
+
+    def novelty(self, z: torch.Tensor, global_step: int) -> float:
+        """Compute novelty score using bias-corrected EMA z-score."""
         z_norm_sq = (z @ z).item()
         if z_norm_sq < 1e-8:
             return 0.0
@@ -170,14 +186,10 @@ class HeadGradientGate:
         else:
             proj = W.T @ z
             redundant_energy = (proj @ proj).item()
-            raw_novel_energy = max(1e-8, z_norm_sq - redundant_energy)
+            raw_novel_energy = max(0.0, z_norm_sq - redundant_energy)
 
-        # Update EMA with same decay as acceptance rate for temporal alignment
-        self.novelty_ema = (
-            self.ema_decay * self.novelty_ema + (1 - self.ema_decay) * raw_novel_energy
-        )
-
-        novelty_score = raw_novel_energy / (raw_novel_energy + self.novelty_ema)
+        z_score = self._compute_ema_zscore(raw_novel_energy, global_step)
+        novelty_score = torch.sigmoid(torch.tensor(z_score, device=self.device)).item()
         return novelty_score
 
     def accept(self, novelty: float, global_step: int) -> bool:
