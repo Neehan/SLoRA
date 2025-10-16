@@ -149,21 +149,20 @@ class HeadGradientGate:
 
         z_tokens = self.tensor_sketch.sketch_batch(h_masked, idx, sel_errors)
         z = z_tokens.sum(dim=0)
-        z_norm = z.norm()
 
-        if z_norm < 1e-8:
-            return torch.zeros(self.m, dtype=torch.float32, device=z.device)
-
-        return z / z_norm
+        # don't normalize to handle multi gpu summing correctly
+        return z
 
     def novelty(self, z: torch.Tensor) -> float:
-        """Compute directional novelty from normalized sketch."""
+        """Compute directional novelty from normalized sketch.
+        WARNING: z must be normalized to unit length! We don't check for this.
+        """
         W = self.sketch.get_basis()
 
         if W.shape[1] == 0:
             return 1.0
 
-        if z.norm().item() < 1e-8:
+        if z.norm().item() < 1e-12:
             return 0.0
 
         proj = W.T @ z

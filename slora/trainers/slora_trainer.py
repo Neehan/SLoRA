@@ -127,10 +127,11 @@ class SLoRATrainer(Trainer):
         with torch.no_grad():
             z = self.gate.embed(hidden_states, logits, labels)
 
+            # sum across all gpus to get the direction of overall z
             if self.accelerator.num_processes > 1:
-                torch.distributed.all_reduce(z, op=torch.distributed.ReduceOp.AVG)
-                z = z / (z.norm() + 1e-12)
+                torch.distributed.all_reduce(z, op=torch.distributed.ReduceOp.SUM)
 
+            z = z / (z.norm() + 1e-12)
             novelty = self.gate.novelty(z)
             accept = self.gate.accept(novelty, global_step=self.state.global_step)
 
