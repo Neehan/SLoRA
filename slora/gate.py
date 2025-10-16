@@ -169,7 +169,7 @@ class HeadGradientGate:
         v_hat = self.novelty_sq_ema / bias_correction
 
         # Z-score
-        variance = v_hat - m_hat**2
+        variance = max(0.0, v_hat - m_hat**2)
         z_score = (x - m_hat) / ((variance + 1e-8) ** 0.5)
         return z_score
 
