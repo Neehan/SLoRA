@@ -45,7 +45,7 @@ class HeadGradientGate:
         self.random = random
 
         self.novelty_ema = initial_threshold
-        self.current_novelty_threshold = 1.0  # start at 1.0 (accept if above average)
+        self.current_novelty_threshold = initial_threshold
         self.acceptance_rate_ema = 1.0  # start as 1.0 for burn in period
         self.ema_decay = 0.95
 
