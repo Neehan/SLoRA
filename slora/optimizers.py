@@ -28,9 +28,9 @@ class GatedOptimizer:
         if self._should_step:
             result = self.optimizer.step(closure)
             self._should_step = False
+            self.num_accepted_in_window = 0
             return result
         self._should_step = False
-        self.num_accepted_in_window = 0
         return None
 
     def zero_grad(self, set_to_none: bool = True) -> None:
