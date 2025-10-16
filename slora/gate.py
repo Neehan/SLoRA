@@ -154,45 +154,41 @@ class HeadGradientGate:
         return z
 
     def novelty(self, z: torch.Tensor) -> float:
-        """Compute directional novelty from normalized sketch.
-        WARNING: z must be normalized to unit length! We don't check for this.
-        """
+        """Compute novelty score in (0,1) from novel gradient energy."""
+        z_norm_sq = (z @ z).item()
+        if z_norm_sq < 1e-8:
+            return 0.0
+
         W = self.sketch.get_basis()
 
         if W.shape[1] == 0:
-            return 1.0
+            novel_energy = z_norm_sq
+        else:
+            proj = W.T @ z
+            redundant_energy = (proj @ proj).item()
+            novel_energy = z_norm_sq - redundant_energy
 
-        if z.norm().item() < 1e-12:
-            return 0.0
-
-        proj = W.T @ z
-        redundancy = (proj @ proj).item()
-        return 1.0 - torch.clamp(torch.tensor(redundancy), min=0.0, max=1.0).item()
+        novel_energy = max(1e-8, novel_energy)
+        novelty_score = torch.sigmoid(torch.log(torch.tensor(novel_energy)))
+        return novelty_score.item()
 
     def accept(self, novelty: float, global_step: int) -> bool:
         """
-        Stochastic acceptance based on novelty score relative to threshold.
+        Hard threshold acceptance based on novelty score.
         During burn-in, accept all updates.
-        After burn-in, use sigmoid for smooth probabilistic gating (leaky).
+        After burn-in, accept if novelty > threshold (never rejects high novelty).
         If random=True, ignore novelty and accept based on target rate only.
         """
         if global_step < self.burn_in:
             return True
 
-        # if random, accept based on target rate only
-        # this is an ablation to see if novelty helps at all!
         if self.random:
             return (
                 torch.rand(1, generator=self.rng, device=self.device).item()
                 < self.target_accept_rate
             )
 
-        gap = novelty - self.current_novelty_threshold
-        acceptance_prob = torch.sigmoid(torch.tensor(20.0 * gap)).item()
-        return (
-            torch.rand(1, generator=self.rng, device=self.device).item()
-            < acceptance_prob
-        )
+        return novelty > self.current_novelty_threshold
 
     def update(self, z: torch.Tensor, count_increment: float) -> None:
         """Update streaming basis with normalized sketch."""

@@ -131,7 +131,6 @@ class SLoRATrainer(Trainer):
             if self.accelerator.num_processes > 1:
                 torch.distributed.all_reduce(z, op=torch.distributed.ReduceOp.SUM)
 
-            z = z / (z.norm() + 1e-12)
             novelty = self.gate.novelty(z)
             accept = self.gate.accept(novelty, global_step=self.state.global_step)
 
