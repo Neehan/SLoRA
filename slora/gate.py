@@ -43,9 +43,10 @@ class HeadGradientGate:
         self.device = torch.device(device)
         self.random = random
 
-        self.current_novelty_threshold = initial_threshold
+        self.novelty_ema = initial_threshold
+        self.current_novelty_threshold = self.novelty_ema  # start at initial threshold
         self.acceptance_rate_ema = 1.0  # start as 1.0 for burn in period
-        self.acceptance_rate_ema_decay = 0.95
+        self.ema_decay = 0.95
 
         self.rng = torch.Generator(device=device).manual_seed(seed)
 
@@ -154,7 +155,10 @@ class HeadGradientGate:
         return z
 
     def novelty(self, z: torch.Tensor) -> float:
-        """Compute novelty score in (0,1) from novel gradient energy."""
+        """
+        Compute novelty score normalized by EMA.
+        Updates novelty_ema internally.
+        """
         z_norm_sq = (z @ z).item()
         if z_norm_sq < 1e-8:
             return 0.0
@@ -162,15 +166,19 @@ class HeadGradientGate:
         W = self.sketch.get_basis()
 
         if W.shape[1] == 0:
-            novel_energy = z_norm_sq
+            raw_novel_energy = z_norm_sq
         else:
             proj = W.T @ z
             redundant_energy = (proj @ proj).item()
-            novel_energy = z_norm_sq - redundant_energy
+            raw_novel_energy = max(1e-8, z_norm_sq - redundant_energy)
 
-        novel_energy = max(1e-8, novel_energy)
-        novelty_score = torch.sigmoid(torch.log(torch.tensor(novel_energy)))
-        return novelty_score.item()
+        # Update EMA with same decay as acceptance rate for temporal alignment
+        self.novelty_ema = (
+            self.ema_decay * self.novelty_ema + (1 - self.ema_decay) * raw_novel_energy
+        )
+
+        novelty_score = raw_novel_energy / (raw_novel_energy + self.novelty_ema)
+        return novelty_score
 
     def accept(self, novelty: float, global_step: int) -> bool:
         """
@@ -197,10 +205,9 @@ class HeadGradientGate:
 
     def step(self, global_step: int, accepted: bool) -> None:
         """Adapt threshold to maintain target acceptance rate using EMA."""
-        self.acceptance_rate_ema = (
-            self.acceptance_rate_ema_decay * self.acceptance_rate_ema
-            + (1 - self.acceptance_rate_ema_decay) * float(accepted)
-        )
+        self.acceptance_rate_ema = self.ema_decay * self.acceptance_rate_ema + (
+            1 - self.ema_decay
+        ) * float(accepted)
 
         if global_step > 2 * self.burn_in:
             error = self.acceptance_rate_ema - self.target_accept_rate
