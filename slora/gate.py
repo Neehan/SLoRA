@@ -162,32 +162,28 @@ class HeadGradientGate:
 
     def novelty(self, z: torch.Tensor, global_step: int) -> float:
         """
-        Compute novelty score as ratio to recent EMA.
-        Returns raw_novel_energy / novelty_ema.
-        Score > 1.0 means above recent average (novel).
-        Score < 1.0 means below recent average (redundant).
+        Directional novelty via projection residual on a unit vector.
+        Returns (raw_dir_novelty / EMA) so ~1.0 means 'as expected', >1.0 'more novel'.
         """
-        z_norm_sq = (z @ z).item()
-        if z_norm_sq < 1e-8:
+        z_norm = z.norm()
+        if torch.isnan(z_norm) or z_norm.item() < 1e-12:
             return 0.0
 
-        W = self.subspace.get_basis()
+        zn = z / z_norm  # unit direction
 
-        if W.shape[1] == 0:
-            raw_novel_energy = z_norm_sq
+        W = self.subspace.get_basis()  # (m, r), assumed orthonormal columns
+        if W.numel() == 0 or W.shape[1] == 0:
+            raw_dir_novel = 1.0  # no basis yet: fully novel
         else:
-            proj = W.T @ z
-            redundant_energy = (proj @ proj).item()
-            raw_novel_energy = max(0.0, z_norm_sq - redundant_energy)
+            # residual energy in [0, 1]: 1 - ||W^T zn||^2
+            coeff = W.T @ zn
+            raw_dir_novel = max(0.0, 1.0 - float((coeff * coeff).sum()))
 
-        # Update EMA
+        # EMA for scale-free gating around 1.0 (keeps your existing thresholds)
         self.novelty_ema = (
-            self.ema_decay * self.novelty_ema + (1 - self.ema_decay) * raw_novel_energy
+            self.ema_decay * self.novelty_ema + (1 - self.ema_decay) * raw_dir_novel
         )
-
-        # Normalize by EMA
-        novelty_score = raw_novel_energy / (self.novelty_ema + 1e-8)
-        return novelty_score
+        return raw_dir_novel  # / (self.novelty_ema + 1e-8)
 
     def accept(self, novelty: float, global_step: int) -> bool:
         """
