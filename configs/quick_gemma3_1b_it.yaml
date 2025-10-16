@@ -55,7 +55,7 @@ slora:
   burn_in: 300
   seed: 0
   reorth_every: 32
-  k_topk: 32 # top-k logits for sparse sketch
+  k_topk: 128 # top-k logits for sparse sketch
   random: false # if true randomly drop batches to match target_accept_rate
 
 data:
