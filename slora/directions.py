@@ -32,7 +32,7 @@ class FrequentDirections:
     """
 
     def __init__(
-        self, m: int, k: int, reorth_every: int, device: str, dtype: torch.dtype
+        self, m: int, k: int, reorth_every: int, device: str, dtype: torch.dtype, decay: float = 1.0
     ):
         """
         Initialize empty sketch.
@@ -43,17 +43,20 @@ class FrequentDirections:
             reorth_every: Re-orthonormalize via QR every N updates (for stability)
             device: Device for tensors
             dtype: Data type for W (must be fp32 or fp64 for stable SVD)
+            decay: Exponential decay factor for old directions (1.0 = no decay, <1.0 = forgetting)
         """
         assert dtype in (
             torch.float32,
             torch.float64,
         ), f"dtype must be fp32 or fp64 for stable SVD, got {dtype}"
         assert k <= m, f"k={k} must be <= m={m}"
+        assert 0.0 < decay <= 1.0, f"decay must be in (0, 1], got {decay}"
         self.m = m
         self.k = k
         self.reorth_every = reorth_every
         self.device = device
         self.dtype = dtype
+        self.decay = decay
 
         # W starts empty, grows to (m, k) as we add vectors
         self.W = torch.empty(m, 0, dtype=dtype, device=device)
@@ -61,39 +64,45 @@ class FrequentDirections:
 
     def update(self, z: torch.Tensor) -> None:
         """
-        Add unit vector z ∈ R^m to orthonormal basis.
+        Add vector z ∈ R^m to basis using momentum blending.
+
+        Momentum blending: W_t = γ * W_{t-1} + (1-γ) * FD_update(z_t)
+        Achieved by decaying singular values (importance) of existing basis.
 
         Process:
-        1. Append z as new column: W ← [W | z]
-        2. If W has ≤ k columns: orthonormalize via QR → W is orthonormal
-        3. If W has k+1 columns: SVD, keep top k left singular vectors (U[:, :k])
-        4. Periodic re-orthonormalization via QR for numerical stability
-
-        This maintains an orthonormal basis spanning the dominant subspace
-        of all vectors seen so far.
+        1. Decay importance of existing directions via singular values: σ ← γ·σ
+        2. Append new vector with full importance
+        3. SVD to rebalance and keep top k directions
 
         Args:
-            z: Unit vector ∈ R^m (must have norm ≈ 1.0)
+            z: Vector ∈ R^m to add to subspace
         """
         z = z.to(dtype=self.dtype, device=self.device)
         assert (
             z.ndim == 1 and z.shape[0] == self.m
         ), f"Expected shape ({self.m},), got {z.shape}"
 
-        # Step 1: Append new vector as column
+        # Step 1: Decay existing basis importance via singular values
         if self.W.shape[1] == 0:
-            # First vector: W is just z as a column
+            # First vector: no existing basis to decay
             self.W = z.unsqueeze(1)
         else:
-            # Concatenate z to existing columns
-            self.W = torch.cat([self.W, z.unsqueeze(1)], dim=1)
+            # Get SVD of existing basis
+            U, S, Vt = torch.linalg.svd(self.W, full_matrices=False)
+
+            # Decay singular values (importance of old directions)
+            S_decayed = self.decay * S
+
+            # Reconstruct basis with decayed importance
+            W_decayed = U @ torch.diag(S_decayed) @ Vt
+
+            # Append new vector with full importance
+            self.W = torch.cat([W_decayed, z.unsqueeze(1)], dim=1)
 
         # Step 2: If we exceed rank k, shrink via Frequent Directions
         if self.W.shape[1] > self.k:
-            # Compute SVD of current matrix
+            # Compute SVD and keep top k directions
             U, S, Vt = torch.linalg.svd(self.W, full_matrices=False)
-
-            # Keep orthonormal basis (drop scaling for novelty computation)
             self.W = U[:, : self.k]
         else:
             # Before hitting k, orthonormalize to maintain basis quality

@@ -218,6 +218,7 @@ def main():
             "reorth_every": config["slora"]["reorth_every"],
             "k_topk": config["slora"]["k_topk"],
             "random": config["slora"]["random"],
+            "subspace_decay": config["slora"]["subspace_decay"],
         }
 
     data_collator = DataCollatorForLanguageModeling(

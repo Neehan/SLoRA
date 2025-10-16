@@ -57,6 +57,7 @@ slora:
   reorth_every: 32
   k_topk: 128 # top-k logits for sparse sketch
   random: false # if true randomly drop batches to match target_accept_rate
+  subspace_decay: 0.99 # exponential decay for old subspace directions (1.0 = no decay)
 
 data:
   dataset_name: allenai/tulu-3-sft-mixture

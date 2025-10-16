@@ -30,9 +30,7 @@ class SLoRATrainer(Trainer):
         self.gate_config = gate_config
 
         self.last_novelty = 0.0
-        self.novelty_ema = 0.0
         self.last_accept = 1
-        self.ema_alpha = 0.01
 
     def create_optimizer_and_scheduler(self, num_training_steps: int) -> None:
         """Wrap optimizer and scheduler with gating logic."""
@@ -64,6 +62,7 @@ class SLoRATrainer(Trainer):
             "reorth_every": self.gate_config["reorth_every"],
             "k_topk": self.gate_config["k_topk"],
             "random": self.gate_config["random"],
+            "subspace_decay": self.gate_config["subspace_decay"],
         }
 
         self.gate = HeadGradientGate(**gate_params)
@@ -144,9 +143,6 @@ class SLoRATrainer(Trainer):
                 accept = bool(accept_tensor.item())
 
         self.last_novelty = novelty
-        self.novelty_ema = (
-            1 - self.ema_alpha
-        ) * self.novelty_ema + self.ema_alpha * novelty
         self.last_accept = int(accept)
 
         count_increment = 1.0 / self.accelerator.num_processes
@@ -175,7 +171,7 @@ class SLoRATrainer(Trainer):
         """Add gate statistics to logs."""
         if self.gate is not None:
             logs["gate/novelty"] = self.last_novelty
-            logs["gate/novelty_avg"] = self.novelty_ema
+            logs["gate/novelty_avg"] = self.gate.novelty_ema
             logs["gate/current_novelty_threshold"] = self.gate.current_novelty_threshold
             logs["gate/accept"] = self.last_accept
             logs["gate/acceptance_rate"] = self.gate.acceptance_rate()
@@ -192,7 +188,7 @@ class SLoRATrainer(Trainer):
                 "total_steps": self.state.global_step,
                 "rejected_steps": self.state.global_step - self.gate.accepted_count,
                 "last_novelty": self.last_novelty,
-                "novelty_avg": self.novelty_ema,
+                "novelty_avg": self.gate.novelty_ema,
                 "last_accept": self.last_accept,
             }
 

@@ -29,6 +29,7 @@ class HeadGradientGate:
         k_topk: int,
         initial_threshold: float,
         random: bool,
+        subspace_decay: float,
     ):
         assert k <= m
 
@@ -51,12 +52,12 @@ class HeadGradientGate:
 
         self.rng = torch.Generator(device=device).manual_seed(seed)
 
-        self.tensor_sketch = TensorSketch(
+        self.sketch = TensorSketch(
             d1=d_hidden, d2=vocab_size, m=m, seed=seed, device=self.device
         )
 
-        self.sketch = FrequentDirections(
-            m, k, reorth_every=reorth_every, device=device, dtype=torch.float32
+        self.subspace = FrequentDirections(
+            m, k, reorth_every=reorth_every, device=device, dtype=torch.float32, decay=subspace_decay
         )
 
         self.accepted_count = 0
@@ -149,7 +150,7 @@ class HeadGradientGate:
             logits_flat, labels_flat, valid_mask
         )
 
-        z_tokens = self.tensor_sketch.sketch_batch(h_masked, idx, sel_errors)
+        z_tokens = self.sketch.sketch_batch(h_masked, idx, sel_errors)
         z = z_tokens.sum(dim=0)
 
         # don't normalize to handle multi gpu summing correctly
@@ -174,7 +175,7 @@ class HeadGradientGate:
         if z_norm_sq < 1e-8:
             return 0.0
 
-        W = self.sketch.get_basis()
+        W = self.subspace.get_basis()
 
         if W.shape[1] == 0:
             raw_novel_energy = z_norm_sq
@@ -206,8 +207,8 @@ class HeadGradientGate:
         return novelty > self.current_novelty_threshold
 
     def update(self, z: torch.Tensor, count_increment: float) -> None:
-        """Update streaming basis with normalized sketch."""
-        self.sketch.update(z)
+        """Update streaming basis with sketch."""
+        self.subspace.update(z)
         self.accepted_count += count_increment
 
     def step(self, global_step: int, accepted: bool) -> None:
@@ -239,5 +240,5 @@ class HeadGradientGate:
 
     def reset(self) -> None:
         """Reset gate to initial state."""
-        self.sketch.reset()
+        self.subspace.reset()
         self.accepted_count = 0
