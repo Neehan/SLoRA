@@ -206,7 +206,7 @@ class HeadGradientGate:
 
         # EMA for scale-free gating around 1.0 (keeps your existing thresholds)
         self.novelty_ema = (
-            self.ema_decay * self.novelty_ema + (1 - self.ema_decay) * raw_dir_novel
+            self.ema_decay * self.novelty_ema + (1 - self.ema_decay) * z_norm.item()
         )
         return raw_dir_novel * z_norm.item() / (self.novelty_ema + 1e-8)
 
