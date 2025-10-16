@@ -155,22 +155,17 @@ class HeadGradientGate:
         # don't normalize to handle multi gpu summing correctly
         return z
 
-    def _compute_ema_zscore(self, x: float, t: int) -> float:
-        """Compute bias-corrected EMA z-score using global_step t."""
+    def _compute_ema_zscore(self, x: float) -> float:
+        """Compute EMA z-score relative to recent history (no bias correction)."""
         # Update EMAs
         self.novelty_ema = self.ema_decay * self.novelty_ema + (1 - self.ema_decay) * x
         self.novelty_sq_ema = (
             self.ema_decay * self.novelty_sq_ema + (1 - self.ema_decay) * x**2
         )
 
-        # Bias correction (t+1 to avoid division by zero at step 0)
-        bias_correction = 1 - self.ema_decay ** (t + 1)
-        m_hat = self.novelty_ema / bias_correction
-        v_hat = self.novelty_sq_ema / bias_correction
-
-        # Z-score
-        variance = max(0.0, v_hat - m_hat**2)
-        z_score = (x - m_hat) / ((variance + 1e-8) ** 0.5)
+        # Z-score relative to recent EMA (no bias correction)
+        variance = max(0.0, self.novelty_sq_ema - self.novelty_ema**2)
+        z_score = (x - self.novelty_ema) / ((variance + 1e-8) ** 0.5)
         return z_score
 
     def novelty(self, z: torch.Tensor, global_step: int) -> float:
@@ -188,7 +183,7 @@ class HeadGradientGate:
             redundant_energy = (proj @ proj).item()
             raw_novel_energy = max(0.0, z_norm_sq - redundant_energy)
 
-        z_score = self._compute_ema_zscore(raw_novel_energy, global_step)
+        z_score = self._compute_ema_zscore(raw_novel_energy)
         novelty_score = torch.sigmoid(torch.tensor(z_score, device=self.device)).item()
         return novelty_score
 
