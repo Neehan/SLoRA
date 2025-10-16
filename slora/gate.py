@@ -163,8 +163,8 @@ class HeadGradientGate:
             self.ema_decay * self.novelty_sq_ema + (1 - self.ema_decay) * x**2
         )
 
-        # Bias correction
-        bias_correction = 1 - self.ema_decay**t
+        # Bias correction (t+1 to avoid division by zero at step 0)
+        bias_correction = 1 - self.ema_decay ** (t + 1)
         m_hat = self.novelty_ema / bias_correction
         v_hat = self.novelty_sq_ema / bias_correction
 
