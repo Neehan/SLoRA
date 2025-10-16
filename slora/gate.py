@@ -47,7 +47,7 @@ class HeadGradientGate:
         self.novelty_ema = initial_threshold
         self.current_novelty_threshold = initial_threshold
         self.acceptance_rate_ema = 1.0  # start as 1.0 for burn in period
-        self.ema_decay = 0.85
+        self.ema_decay = 0.95
 
         self.rng = torch.Generator(device=device).manual_seed(seed)
 
@@ -187,28 +187,26 @@ class HeadGradientGate:
 
     def novelty(self, z: torch.Tensor, global_step: int) -> float:
         """
-        Directional novelty via projection residual on a unit vector.
-        Returns (raw_dir_novelty / EMA) so ~1.0 means 'as expected', >1.0 'more novel'.
+        Magnitude-weighted novelty: ||z - projection onto subspace||.
+        EMA-normalized so ~1.0 means 'as expected', >1.0 'more novel than usual'.
         """
         z_norm = z.norm()
         if torch.isnan(z_norm) or z_norm.item() < 1e-12:
             return 0.0
 
-        zn = z / z_norm  # unit direction
-
         W = self.subspace.get_basis()  # (m, r), assumed orthonormal columns
         if W.numel() == 0 or W.shape[1] == 0:
-            raw_dir_novel = 1.0  # no basis yet: fully novel
+            residual_norm = z_norm.item()  # no basis yet: fully novel
         else:
-            # residual energy in [0, 1]: 1 - ||W^T zn||^2
-            coeff = W.T @ zn
-            raw_dir_novel = max(0.0, 1.0 - float((coeff * coeff).sum()))
+            # ||z - W W^T z|| = magnitude in novel direction
+            projection = W @ (W.T @ z)
+            residual_norm = (z - projection).norm().item()
 
-        # EMA for scale-free gating around 1.0 (keeps your existing thresholds)
+        # EMA for scale-free gating around 1.0
         self.novelty_ema = (
-            self.ema_decay * self.novelty_ema + (1 - self.ema_decay) * z_norm.item()
+            self.ema_decay * self.novelty_ema + (1 - self.ema_decay) * residual_norm
         )
-        return z_norm.item() / (self.novelty_ema + 1e-8)  # + raw_dir_novel
+        return residual_norm / (self.novelty_ema + 1e-8)
 
     def accept(self, novelty: float, global_step: int) -> bool:
         """
