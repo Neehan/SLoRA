@@ -56,7 +56,12 @@ class HeadGradientGate:
         )
 
         self.subspace = FrequentDirections(
-            m, k, reorth_every=reorth_every, device=device, dtype=torch.float32, decay=subspace_decay
+            m,
+            k,
+            reorth_every=reorth_every,
+            device=device,
+            dtype=torch.float32,
+            decay=subspace_decay,
         )
 
         self.accepted_count = 0
@@ -217,7 +222,7 @@ class HeadGradientGate:
             error = self.acceptance_rate_ema - self.target_accept_rate
             self.current_novelty_threshold += self.controller_lr * error
             self.current_novelty_threshold = torch.clamp(
-                torch.tensor(self.current_novelty_threshold), min=0.0, max=1.0
+                torch.tensor(self.current_novelty_threshold), min=0.0
             ).item()
         elif global_step > self.burn_in:
             steps_since_burnin = global_step - self.burn_in
@@ -227,7 +232,7 @@ class HeadGradientGate:
                 self.controller_lr * error * progress_scale
             )
             self.current_novelty_threshold = torch.clamp(
-                torch.tensor(self.current_novelty_threshold), min=0.0, max=1.0
+                torch.tensor(self.current_novelty_threshold), min=0.0
             ).item()
 
     def acceptance_rate(self) -> float:
