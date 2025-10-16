@@ -48,14 +48,14 @@ lora:
 slora:
   enable: true
   m: 1024 # dimension of projected space
-  k: 128 # rank
+  k: 32 # rank
   target_accept_rate: 0.40
   initial_threshold: 0.05
   controller_lr: 0.01
   burn_in: 300
   seed: 0
   reorth_every: 32
-  k_topk: 128 # top-k logits for sparse sketch
+  k_topk: 32 # top-k logits for sparse sketch
   random: false # if true randomly drop batches to match target_accept_rate
 
 data:
