@@ -15,9 +15,14 @@ class GatedOptimizer:
     def __init__(self, optimizer: Optimizer):
         self.optimizer = optimizer
         self._should_step = False
+        self.num_accepted_in_window = 0
 
     def mark_accept(self) -> None:
         self._should_step = True
+        self.num_accepted_in_window += 1
+
+    def get_num_accepted(self) -> int:
+        return self.num_accepted_in_window
 
     def step(self, closure: Callable[[], float] | None = None) -> float | None:
         if self._should_step:
@@ -25,10 +30,12 @@ class GatedOptimizer:
             self._should_step = False
             return result
         self._should_step = False
+        self.num_accepted_in_window = 0
         return None
 
     def zero_grad(self, set_to_none: bool = True) -> None:
         self.optimizer.zero_grad(set_to_none=set_to_none)
+        self.num_accepted_in_window = 0
 
     def state_dict(self) -> dict[str, Any]:
         return self.optimizer.state_dict()
@@ -40,7 +47,7 @@ class GatedOptimizer:
         return getattr(self.optimizer, name)
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name in ("optimizer", "_should_step"):
+        if name in ("optimizer", "_should_step", "num_accepted_in_window"):
             super().__setattr__(name, value)
         else:
             setattr(self.optimizer, name, value)
