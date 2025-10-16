@@ -208,7 +208,7 @@ class HeadGradientGate:
         self.novelty_ema = (
             self.ema_decay * self.novelty_ema + (1 - self.ema_decay) * z_norm.item()
         )
-        return raw_dir_novel * z_norm.item() / (self.novelty_ema + 1e-8)
+        return z_norm.item() / (self.novelty_ema + 1e-8)  # + raw_dir_novel
 
     def accept(self, novelty: float, global_step: int) -> bool:
         """
