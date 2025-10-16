@@ -14,28 +14,47 @@ class TensorSketch:
     """
 
     def __init__(self, d1: int, d2: int, m: int, seed: int, device: torch.device):
-        g1 = torch.Generator(device="cpu").manual_seed(seed)
-        self.bucket_1 = torch.randint(
-            low=0, high=m, size=(d1,), generator=g1, dtype=torch.long
-        ).to(device)
-        self.sign_1 = (
-            (torch.randint(0, 2, (d1,), generator=g1, dtype=torch.int8) * 2 - 1).to(
-                torch.int8
-            )
-        ).to(device)
-
-        g2 = torch.Generator(device="cpu").manual_seed(seed + 1)
-        self.bucket_2 = torch.randint(
-            low=0, high=m, size=(d2,), generator=g2, dtype=torch.long
-        ).to(device)
-        self.sign_2 = (
-            (torch.randint(0, 2, (d2,), generator=g2, dtype=torch.int8) * 2 - 1).to(
-                torch.int8
-            )
-        ).to(device)
-
         self.m = m
         self.device = device
+        self.bucket_1, self.sign_1 = self._init_hash_params(d1, seed)
+        self.bucket_2, self.sign_2 = self._init_hash_params(d2, seed + 1)
+
+    def _init_hash_params(
+        self, dim: int, seed: int
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Sample (or broadcast) CountSketch hash buckets/signs so every process
+        shares the exact same mappings when running under DDP.
+        """
+        dist_enabled = (
+            torch.distributed.is_available() and torch.distributed.is_initialized()
+        )
+        rank = torch.distributed.get_rank() if dist_enabled else 0
+
+        if not dist_enabled or rank == 0:
+            generator = torch.Generator(device="cpu").manual_seed(seed)
+            bucket = torch.randint(
+                low=0, high=self.m, size=(dim,), generator=generator, dtype=torch.long
+            )
+            sign = (
+                torch.randint(
+                    0, 2, (dim,), generator=generator, dtype=torch.int8
+                ).mul_(2)
+                .sub_(1)
+                .to(torch.int8)
+            )
+        else:
+            bucket = torch.empty(dim, dtype=torch.long)
+            sign = torch.empty(dim, dtype=torch.int8)
+
+        bucket = bucket.to(self.device)
+        sign = sign.to(self.device)
+
+        if dist_enabled:
+            torch.distributed.broadcast(bucket, src=0)
+            torch.distributed.broadcast(sign, src=0)
+
+        return bucket, sign
 
     def sketch_batch(
         self,
