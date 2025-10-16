@@ -110,7 +110,7 @@ class SLoRATrainer(Trainer):
         model.train()
         inputs = self._prepare_inputs(inputs)
         labels = inputs["labels"]
-        inputs["output_hidden_states"] = True
+        inputs["output_hidden_states"] = True  # type: ignore
 
         with self.compute_loss_context_manager():
             loss, outputs = self.compute_loss(
@@ -119,8 +119,8 @@ class SLoRATrainer(Trainer):
                 return_outputs=True,
                 num_items_in_batch=num_items_in_batch,
             )
-            hidden_states = outputs.hidden_states[-1]
-            logits = outputs.logits
+            hidden_states = outputs.hidden_states[-1]  # type: ignore
+            logits = outputs.logits  # type: ignore
 
         del inputs
 
@@ -147,7 +147,9 @@ class SLoRATrainer(Trainer):
         # Update novelty score EMA (use same decay as gate)
         if self.gate is not None:
             decay = self.gate.ema_decay
-            self.novelty_score_ema = decay * self.novelty_score_ema + (1 - decay) * novelty
+            self.novelty_score_ema = (
+                decay * self.novelty_score_ema + (1 - decay) * novelty
+            )
         self.last_accept = int(accept)
 
         count_increment = 1.0 / self.accelerator.num_processes

@@ -171,15 +171,14 @@ class HeadGradientGate:
         if z_norm_sq < 1e-8:
             return 0.0
 
-        # W = self.subspace.get_basis()
+        W = self.subspace.get_basis()
 
-        # if W.shape[1] == 0:
-        #     raw_novel_energy = z_norm_sq
-        # else:
-        #     proj = W.T @ z
-        #     redundant_energy = (proj @ proj).item()
-        #     raw_novel_energy = max(0.0, z_norm_sq - redundant_energy)
-        raw_novel_energy = z_norm_sq
+        if W.shape[1] == 0:
+            raw_novel_energy = z_norm_sq
+        else:
+            proj = W.T @ z
+            redundant_energy = (proj @ proj).item()
+            raw_novel_energy = max(0.0, z_norm_sq - redundant_energy)
 
         # Update EMA
         self.novelty_ema = (
