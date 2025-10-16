@@ -7,6 +7,20 @@ import json
 from pathlib import Path
 
 
+def get_lora_parameters(model: torch.nn.Module) -> list[torch.nn.Parameter]:
+    """Get list of LoRA parameters (cached by caller)."""
+    return [p for n, p in model.named_parameters() if "lora_A" in n or "lora_B" in n]
+
+
+def compute_lora_grad_norm(lora_params: list[torch.nn.Parameter]) -> float:
+    """Compute L2 norm of LoRA gradients."""
+    total_norm = 0.0
+    for param in lora_params:
+        if param.grad is not None:
+            total_norm += param.grad.data.norm(2).item() ** 2
+    return total_norm ** 0.5
+
+
 class SLoRATrainer(Trainer):
     """
     HuggingFace Trainer with head-gradient proxy gating.
@@ -32,6 +46,7 @@ class SLoRATrainer(Trainer):
         self.last_novelty = 0.0
         self.novelty_score_ema = 1.0  # EMA of novelty scores (ratio), not raw energy
         self.last_accept = 1
+        self.lora_params: Optional[list[torch.nn.Parameter]] = None
 
     def create_optimizer_and_scheduler(self, num_training_steps: int) -> None:
         """Wrap optimizer and scheduler with gating logic."""
@@ -164,7 +179,10 @@ class SLoRATrainer(Trainer):
 
         if accept:
             self.accelerator.backward(loss)
-            self.gate.update(z, count_increment)
+            if self.lora_params is None:
+                self.lora_params = get_lora_parameters(model)
+            grad_norm = compute_lora_grad_norm(self.lora_params)
+            self.gate.update(z, grad_norm, count_increment)
             self.optimizer.mark_accept()
             if self.lr_scheduler is not None:
                 self.lr_scheduler.mark_accept()
