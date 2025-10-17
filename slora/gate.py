@@ -221,12 +221,12 @@ class HeadGradientGate:
             coeff = W_T @ zn
             novelty_value = max(0.0, 1.0 - float((coeff * coeff).sum()))
 
-        self.novelty_ema = self.ema_decay * self.novelty_ema + (
-            1 - self.ema_decay
-        ) * novelty_value
+        self.novelty_ema = (
+            self.ema_decay * self.novelty_ema + (1 - self.ema_decay) * novelty_value
+        )
 
-        if global_step < self.burn_in:
-            self.current_novelty_threshold = self.novelty_ema
+        # if global_step < self.burn_in:
+        #     self.current_novelty_threshold = self.novelty_ema
 
         return novelty_value
 
