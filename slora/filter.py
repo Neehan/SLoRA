@@ -65,8 +65,9 @@ def filter_pass(
             logits = outputs.logits
             labels = batch["labels"]
 
+            optimizer_step = batch_idx // grad_accum_steps
             novelty, accept = dataset_filter.filter_batch(
-                batch_idx, hidden_states, logits, labels
+                batch_idx, hidden_states, logits, labels, optimizer_step
             )
 
             novelty_score_ema = (
@@ -129,6 +130,7 @@ class DatasetFilter:
         hidden_states: torch.Tensor,
         logits: torch.Tensor,
         labels: torch.Tensor,
+        optimizer_step: int,
     ) -> tuple[float, bool]:
         """
         Evaluate batch through gate and record if accepted.
@@ -144,8 +146,8 @@ class DatasetFilter:
             if self.accelerator.num_processes > 1:
                 torch.distributed.all_reduce(z, op=torch.distributed.ReduceOp.SUM)
 
-            novelty = self.gate.novelty(z, self.global_step)
-            accept = self.gate.accept(novelty, self.global_step)
+            novelty = self.gate.novelty(z, optimizer_step)
+            accept = self.gate.accept(novelty, optimizer_step)
 
             if self.accelerator.num_processes > 1:
                 accept_tensor = torch.tensor(
@@ -162,8 +164,7 @@ class DatasetFilter:
                 self.accepted_indices.append(batch_idx)
                 self.gate.update(z, count_increment)
 
-            self.gate.step(self.global_step, accept)
-            self.global_step += 1
+            self.gate.step(optimizer_step, accept)
 
         return novelty, accept
 

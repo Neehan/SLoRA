@@ -94,10 +94,13 @@ def main():
 
     if accelerator.is_main_process and config["logging"]["report_to"] == "wandb":
         import wandb
+        run_name = config["logging"].get("wandb_run_name", None)
         wandb.init(
             project=config["logging"]["wandb_project"],
-            name=config["logging"].get("wandb_run_name", None),
+            name=run_name,
+            id=run_name,
             config=config,
+            resume="allow",
         )
 
     if config["slora"].get("enable", True):
