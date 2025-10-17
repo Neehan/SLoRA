@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 from slora.gate import HeadGradientGate
 from torch.utils.data import DataLoader
 import wandb
+import time
 
 
 def filter_pass(
@@ -40,8 +41,6 @@ def filter_pass(
 
     novelty_score_ema = 1.0
     last_accept = 1
-
-    import time
 
     logger.info("Starting filtering pass...")
     model.eval()

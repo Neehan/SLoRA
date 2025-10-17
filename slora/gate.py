@@ -81,7 +81,7 @@ class HeadGradientGate:
         Flatten and mask inputs for batch processing.
 
         Returns:
-            h_flat: (N, d_hidden) flattened hidden states
+            h_masked: (N, d_hidden) hidden states with padding zeroed
             logits_flat: (N, vocab_size)
             labels_flat: (N,)
             valid_mask: (N,) boolean mask for non-padding tokens
@@ -93,8 +93,9 @@ class HeadGradientGate:
         logits_flat = logits.reshape(N, -1).detach()
         labels_flat = labels.reshape(N)
         valid_mask = labels_flat >= 0
+        h_masked = h_flat * valid_mask.unsqueeze(1).float()
 
-        return h_flat, logits_flat, labels_flat, valid_mask
+        return h_masked, logits_flat, labels_flat, valid_mask
 
     def _compute_sparse_errors(
         self,
@@ -186,7 +187,7 @@ class HeadGradientGate:
         Returns:
             z ∈ R^m: Unnormalized sketch of aggregated head gradient
         """
-        h_flat, logits_flat, labels_flat, valid_mask = self._prepare_inputs(
+        h_masked, logits_flat, labels_flat, valid_mask = self._prepare_inputs(
             hidden_states, logits, labels
         )
 
@@ -200,7 +201,7 @@ class HeadGradientGate:
             non_rest_mask, sel_errors, torch.zeros_like(sel_errors)
         )
 
-        z_tokens = self.sketch.sketch_batch(h_flat, idx_filtered, sel_errors_filtered)
+        z_tokens = self.sketch.sketch_batch(h_masked, idx_filtered, sel_errors_filtered)
         z = z_tokens[valid_mask].sum(dim=0)
 
         return z
