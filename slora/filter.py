@@ -7,7 +7,7 @@ import wandb
 
 
 def filter_pass(
-    model, dataset, config: Dict[str, Any], accelerator, logger, data_collator
+    model, dataset, gate_config: Dict[str, Any], accelerator, logger, data_collator
 ) -> List[int]:
     """
     Run filtering pass to get accepted sample indices.
@@ -21,18 +21,18 @@ def filter_pass(
     gate_params = {
         "d_hidden": model_config.hidden_size,
         "vocab_size": model_config.vocab_size,
-        "m": config["slora"]["m"],
-        "k": config["slora"]["k"],
-        "target_accept_rate": config["slora"]["target_accept_rate"],
-        "initial_threshold": config["slora"]["initial_threshold"],
-        "controller_lr": config["slora"]["controller_lr"],
-        "burn_in": config["slora"]["burn_in"],
-        "seed": config["slora"]["seed"],
+        "m": gate_config["m"],
+        "k": gate_config["k"],
+        "target_accept_rate": gate_config["target_accept_rate"],
+        "initial_threshold": gate_config["initial_threshold"],
+        "controller_lr": gate_config["controller_lr"],
+        "burn_in": gate_config["burn_in"],
+        "seed": gate_config["seed"],
         "device": str(device),
-        "reorth_every": config["slora"]["reorth_every"],
-        "k_topk": config["slora"]["k_topk"],
-        "random": config["slora"]["random"],
-        "subspace_decay": config["slora"]["subspace_decay"],
+        "reorth_every": gate_config["reorth_every"],
+        "k_topk": gate_config["k_topk"],
+        "random": gate_config["random"],
+        "subspace_decay": gate_config["subspace_decay"],
     }
 
     gate = HeadGradientGate(**gate_params)
@@ -50,14 +50,14 @@ def filter_pass(
 
     dataloader = DataLoader(
         dataset,
-        batch_size=config["training"]["per_device_train_batch_size"],
+        batch_size=gate_config["per_device_train_batch_size"],
         shuffle=False,
         collate_fn=data_collator,
     )
     dataloader = accelerator.prepare(dataloader)
 
-    grad_accum_steps = config["training"]["gradient_accumulation_steps"]
-    max_steps = config["training"].get("max_steps", -1)
+    grad_accum_steps = gate_config["gradient_accumulation_steps"]
+    max_steps = gate_config["max_steps"]
     total_batches = len(dataloader)
     total_steps = total_batches // grad_accum_steps
 
@@ -65,7 +65,7 @@ def filter_pass(
         total_steps = max_steps
         total_batches = max_steps * grad_accum_steps
 
-    burn_in = config["slora"]["burn_in"]
+    burn_in = gate_config["burn_in"]
 
     if burn_in >= total_steps:
         logger.warning(
@@ -94,7 +94,7 @@ def filter_pass(
 
             if batch_idx % grad_accum_steps == 0:
                 optimizer_step = batch_idx // grad_accum_steps
-                logging_steps = config["training"].get("logging_steps", 10)
+                logging_steps = gate_config["logging_steps"]
                 if optimizer_step % logging_steps == 0:
                     logger.info(
                         f"Filter step {optimizer_step}, "
@@ -125,7 +125,7 @@ def filter_pass(
     if accelerator.is_main_process:
         wandb.log({"filter/total_time_seconds": filter_time})
 
-    batch_size = config["training"]["per_device_train_batch_size"]
+    batch_size = gate_config["per_device_train_batch_size"]
     accepted_sample_indices = []
     for batch_idx in accepted_batch_indices:
         start_idx = batch_idx * batch_size
