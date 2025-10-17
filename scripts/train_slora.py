@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import os
-import sys
 import argparse
 import yaml
-from pathlib import Path
 from typing import Dict, Any
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -15,112 +13,32 @@ from transformers import (
     TrainingArguments,
     BitsAndBytesConfig,
     DataCollatorForLanguageModeling,
+    Trainer,
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from datasets import load_dataset
+from accelerate import Accelerator
 
-from slora.trainers.slora_trainer import SLoRATrainer
+from slora.slora import slora_filter
 from slora.utils.seed import set_seed
 from slora.utils.logging import setup_logging
+from slora.utils.data import prepare_data
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
-    """Load YAML config file."""
     with open(config_path) as f:
-        config = yaml.safe_load(f)
-    return config
-
-
-def prepare_data(config: Dict[str, Any], tokenizer, logger):
-    """Load and prepare dataset."""
-    dataset = load_dataset(
-        config["data"]["dataset_name"],
-        split=config["data"]["train_split"],
-    )
-    eval_dataset = load_dataset(
-        config["data"]["dataset_name"],
-        split=config["data"]["eval_split"],
-    )
-
-    def formatting_func(example):
-        """Format example as chat template."""
-        try:
-            text = tokenizer.apply_chat_template(
-                example["messages"],
-                tokenize=False,
-                add_generation_prompt=False,
-            )
-            return {"text": text}
-        except Exception:
-            return {"text": None}
-
-    dataset_orig_size = len(dataset)  # type: ignore
-    dataset = dataset.map(formatting_func)
-    dataset = dataset.filter(lambda x: x["text"] is not None)
-    logger.info(
-        f"Train dataset: kept {len(dataset)}/{dataset_orig_size} examples (skipped {dataset_orig_size - len(dataset)})"  # type: ignore
-    )
-
-    eval_orig_size = len(eval_dataset)  # type: ignore
-    eval_dataset = eval_dataset.map(formatting_func)
-    eval_dataset = eval_dataset.filter(lambda x: x["text"] is not None)
-    logger.info(
-        f"Eval dataset: kept {len(eval_dataset)}/{eval_orig_size} examples (skipped {eval_orig_size - len(eval_dataset)})"  # type: ignore
-    )
-
-    def tokenize_func(examples):
-        """Tokenize text."""
-        result = tokenizer(
-            examples["text"],
-            truncation=True,
-            max_length=config["data"]["max_seq_length"],
-            padding="max_length",
-        )
-        result["labels"] = result["input_ids"].copy()
-        return result
-
-    dataset = dataset.map(
-        tokenize_func,
-        batched=True,
-        remove_columns=(
-            list(dataset.column_names)
-            if isinstance(dataset.column_names, dict)
-            else dataset.column_names
-        ),
-    )
-    eval_dataset = eval_dataset.map(
-        tokenize_func,
-        batched=True,
-        remove_columns=(
-            list(eval_dataset.column_names)
-            if isinstance(eval_dataset.column_names, dict)
-            else eval_dataset.column_names
-        ),
-    )
-
-    return dataset, eval_dataset
+        return yaml.safe_load(f)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train SLoRA model")
-    parser.add_argument(
-        "--config",
-        type=str,
-        required=True,
-        help="Path to YAML config file",
-    )
-    parser.add_argument(
-        "--local_rank",
-        type=int,
-        default=-1,
-        help="Local rank for distributed training",
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, required=True)
+    parser.add_argument("--local_rank", type=int, default=-1)
     args = parser.parse_args()
 
     config = load_config(args.config)
     logger = setup_logging()
-
     set_seed(config["training"]["seed"])
+    accelerator = Accelerator()
 
     logger.info(f"Loading model: {config['model']['name']}")
 
@@ -170,6 +88,14 @@ def main():
     logger.info("Loading and preparing dataset")
     train_dataset, eval_dataset = prepare_data(config, tokenizer, logger)
 
+    if config["slora"].get("enable", True):
+        model = accelerator.prepare(model)
+        accepted_indices = slora_filter(
+            model, train_dataset, config, accelerator, logger
+        )
+        train_dataset = train_dataset.select(accepted_indices)  # type: ignore
+        logger.info(f"Filtered train dataset size: {len(train_dataset)}")
+
     training_args = TrainingArguments(
         output_dir=config["training"]["output_dir"],
         num_train_epochs=config["training"]["num_train_epochs"],
@@ -204,35 +130,17 @@ def main():
         ddp_find_unused_parameters=False,
     )
 
-    enable_gate = config["slora"].get("enable", True)
-    gate_config = None
-    if enable_gate:
-        gate_config = {
-            "m": config["slora"]["m"],
-            "k": config["slora"]["k"],
-            "target_accept_rate": config["slora"]["target_accept_rate"],
-            "initial_threshold": config["slora"]["initial_threshold"],
-            "controller_lr": config["slora"]["controller_lr"],
-            "burn_in": config["slora"]["burn_in"],
-            "seed": config["slora"]["seed"],
-            "reorth_every": config["slora"]["reorth_every"],
-            "k_topk": config["slora"]["k_topk"],
-            "random": config["slora"]["random"],
-            "subspace_decay": config["slora"]["subspace_decay"],
-        }
-
     data_collator = DataCollatorForLanguageModeling(
         tokenizer, mlm=False, pad_to_multiple_of=8
     )
 
-    trainer = SLoRATrainer(
+    trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
+        train_dataset=train_dataset,  # type: ignore
+        eval_dataset=eval_dataset,  # type: ignore
         processing_class=tokenizer,
         data_collator=data_collator,
-        gate_config=gate_config,
     )
 
     logger.info("Starting training")

@@ -48,7 +48,6 @@ class HeadGradientGate:
         self.current_novelty_threshold = initial_threshold
         self.acceptance_rate_ema = 1.0  # start as 1.0 for burn in period
         self.ema_decay = 0.95
-        self.grad_norm_ema = 1.0
 
         self.rng = torch.Generator(device=device).manual_seed(seed)
 
@@ -223,19 +222,15 @@ class HeadGradientGate:
 
         return novelty > self.current_novelty_threshold
 
-    def update(self, z: torch.Tensor, grad_norm: float, count_increment: float) -> None:
-        """Update streaming basis with sketch if grad norm is above EMA."""
-        self.grad_norm_ema = self.ema_decay * self.grad_norm_ema + (1 - self.ema_decay) * grad_norm
+    def update(self, z: torch.Tensor, count_increment: float) -> None:
+        """Update streaming basis with normalized accepted sketch."""
+        z_norm = z.norm()
+        if torch.isnan(z_norm) or z_norm.item() < 1e-12:
+            zn = z
+        else:
+            zn = z / z_norm
 
-        if grad_norm > self.grad_norm_ema:
-            z_norm = z.norm()
-            if torch.isnan(z_norm) or z_norm.item() < 1e-12:
-                zn = z
-            else:
-                zn = z / z_norm
-
-            self.subspace.update(zn)
-
+        self.subspace.update(zn)
         self.accepted_count += count_increment
 
     def step(self, global_step: int, accepted: bool) -> None:
