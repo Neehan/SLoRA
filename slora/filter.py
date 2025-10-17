@@ -89,10 +89,9 @@ def filter_pass(
                 token_type_ids=batch.get("token_type_ids"),
                 output_hidden_states=True,
                 use_cache=False,
-                return_dict=False,
             )
-            logits = outputs[0]
-            hidden_states = outputs[1][-1]
+            logits = outputs.logits
+            hidden_states = outputs.hidden_states[-1]
             labels = batch["labels"]
             forward_time_total += time.time() - forward_start
 
