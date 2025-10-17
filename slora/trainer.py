@@ -62,6 +62,10 @@ class SLoRATrainer(Trainer):
                 )
                 self.args.max_steps = adjusted_max_steps
 
+                # Recreate scheduler with adjusted max_steps
+                if self.lr_scheduler is not None:
+                    self.create_scheduler(num_training_steps=adjusted_max_steps, optimizer=self.optimizer)
+
     def _save_checkpoint(self, model, trial):
         """Save checkpoint."""
         checkpoint_folder = super()._save_checkpoint(model, trial)
