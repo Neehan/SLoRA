@@ -14,17 +14,15 @@ class FilterForward(nn.Module):
         super().__init__()
         self.model = model
         self.model.config.use_cache = False
-        self.model.config.output_hidden_states = True
 
     def forward(self, **inputs):
         outputs = self.model(
             **inputs,
             output_hidden_states=True,
             use_cache=False,
-            return_dict=False,
+            return_dict=True,
         )
-        logits, _, hidden_states, *_ = outputs
-        return hidden_states[-1], logits
+        return outputs.hidden_states[-1], outputs.logits
 
 
 def filter_pass(
