@@ -60,6 +60,7 @@ class FrequentDirections:
 
         # W starts empty, grows to (m, k) as we add vectors
         self.W = torch.empty(m, 0, dtype=dtype, device=device)
+        self.W_T = torch.empty(0, m, dtype=dtype, device=device)
         self.update_count = 0
 
     def update(self, z: torch.Tensor) -> None:
@@ -109,6 +110,8 @@ class FrequentDirections:
             Q, _ = torch.linalg.qr(self.W)
             self.W = Q
 
+        self.W_T = self.W.T
+
         # Step 3: Periodic re-orthonormalization for numerical stability
         self.update_count += 1
         if self.update_count % self.reorth_every == 0:
@@ -125,6 +128,7 @@ class FrequentDirections:
         if self.W.shape[1] > 0:
             Q, _ = torch.linalg.qr(self.W)
             self.W = Q
+            self.W_T = self.W.T
 
     def get_basis(self) -> torch.Tensor:
         """
@@ -134,3 +138,12 @@ class FrequentDirections:
             W: Orthonormal matrix (columns are orthogonal unit vectors)
         """
         return self.W.clone()
+
+    def get_basis_T(self) -> torch.Tensor:
+        """
+        Return transpose of current orthonormal basis W^T ∈ R^{k×m}.
+
+        Returns:
+            W_T: Transpose of orthonormal matrix
+        """
+        return self.W_T

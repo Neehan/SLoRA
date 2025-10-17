@@ -42,14 +42,13 @@ class TensorSketch:
                 low=0, high=self.m, size=(dim,), generator=generator, dtype=torch.long
             )
             sign = (
-                torch.randint(0, 2, (dim,), generator=generator, dtype=torch.int8)
+                torch.randint(0, 2, (dim,), generator=generator, dtype=torch.float32)
                 .mul_(2)
                 .sub_(1)
-                .to(torch.int8)
             )
         else:
             bucket = torch.empty(dim, dtype=torch.long)
-            sign = torch.empty(dim, dtype=torch.int8)
+            sign = torch.empty(dim, dtype=torch.float32)
 
         bucket = bucket.to(self.device)
         sign = sign.to(self.device)
@@ -95,14 +94,12 @@ class TensorSketch:
         s_h = self._s_h_buffer
         s_e = self._s_e_buffer
 
-        s_h.index_add_(
-            1, self.bucket_1, self.sign_1.float().unsqueeze(0) * dense_vecs.float()
-        )
+        s_h.index_add_(1, self.bucket_1, self.sign_1.unsqueeze(0) * dense_vecs)
 
         sel_signs = self.sign_2[sparse_indices]
         sel_buckets = self.bucket_2[sparse_indices]
 
-        weighted = (sel_signs.float() * sparse_values).reshape(-1)
+        weighted = (sel_signs * sparse_values).reshape(-1)
         buckets_flat = sel_buckets.reshape(-1)
         batch_idx = (
             torch.arange(N, device=self.device)
@@ -110,7 +107,8 @@ class TensorSketch:
             .expand(-1, sparse_indices.size(1))
             .reshape(-1)
         )
-        s_e.index_put_((batch_idx, buckets_flat), weighted, accumulate=True)  # type: ignore
+        flat_indices = batch_idx * self.m + buckets_flat
+        s_e.view(-1).scatter_add_(0, flat_indices, weighted)  # type: ignore
 
         fft_h = torch.fft.fft(s_h, dim=1)
         fft_e = torch.fft.fft(s_e, dim=1)

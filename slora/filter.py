@@ -83,20 +83,17 @@ def filter_pass(
                 break
 
             forward_start = time.time()
-            forward_inputs = {
-                k: v
-                for k, v in batch.items()
-                if k
-                in ("input_ids", "attention_mask", "position_ids", "token_type_ids")
-            }
             outputs = model(
-                **forward_inputs,
+                input_ids=batch["input_ids"],
+                attention_mask=batch.get("attention_mask"),
+                position_ids=batch.get("position_ids"),
+                token_type_ids=batch.get("token_type_ids"),
                 output_hidden_states=True,
                 use_cache=False,
-                return_dict=True,
+                return_dict=False,
             )
-            hidden_states = outputs.hidden_states[-1]
-            logits = outputs.logits
+            logits = outputs[0]
+            hidden_states = outputs[1][-1]
             labels = batch["labels"]
             forward_time_total += time.time() - forward_start
 
@@ -199,7 +196,13 @@ class DatasetFilter:
         if self.accelerator.num_processes > 1:
             torch.distributed.all_reduce(z, op=torch.distributed.ReduceOp.SUM)
 
-        novelty = self.gate.novelty(z, optimizer_step)
+        z_norm = z.norm().item()
+        if z_norm < 1e-12:
+            zn = z
+        else:
+            zn = z / z_norm
+
+        novelty = self.gate.novelty(zn, optimizer_step)
         accept = self.gate.accept(novelty, optimizer_step)
 
         if self.accelerator.num_processes > 1:
@@ -213,7 +216,7 @@ class DatasetFilter:
 
         if accept:
             self.accepted_indices.append(batch_idx)
-            self.gate.update(z, count_increment)
+            self.gate.update(zn, count_increment)
 
         self.gate.step(optimizer_step, accept)
 

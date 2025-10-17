@@ -81,7 +81,7 @@ class HeadGradientGate:
         Flatten and mask inputs for batch processing.
 
         Returns:
-            h_masked: (N, d_hidden) hidden states with padding zeroed
+            h_flat: (N, d_hidden) flattened hidden states
             logits_flat: (N, vocab_size)
             labels_flat: (N,)
             valid_mask: (N,) boolean mask for non-padding tokens
@@ -92,11 +92,9 @@ class HeadGradientGate:
         h_flat = hidden_states.reshape(N, H)
         logits_flat = logits.reshape(N, -1).detach()
         labels_flat = labels.reshape(N)
-
         valid_mask = labels_flat >= 0
-        h_masked = h_flat * valid_mask.unsqueeze(1).float()
 
-        return h_masked, logits_flat, labels_flat, valid_mask
+        return h_flat, logits_flat, labels_flat, valid_mask
 
     def _compute_sparse_errors(
         self,
@@ -186,9 +184,9 @@ class HeadGradientGate:
             labels: (B, T) with -100 for padding
 
         Returns:
-            z ∈ R^m: Normalized sketch of aggregated head gradient
+            z ∈ R^m: Unnormalized sketch of aggregated head gradient
         """
-        h_masked, logits_flat, labels_flat, valid_mask = self._prepare_inputs(
+        h_flat, logits_flat, labels_flat, valid_mask = self._prepare_inputs(
             hidden_states, logits, labels
         )
 
@@ -202,29 +200,26 @@ class HeadGradientGate:
             non_rest_mask, sel_errors, torch.zeros_like(sel_errors)
         )
 
-        z_tokens = self.sketch.sketch_batch(h_masked, idx_filtered, sel_errors_filtered)
+        z_tokens = self.sketch.sketch_batch(h_flat, idx_filtered, sel_errors_filtered)
         z = z_tokens[valid_mask].sum(dim=0)
 
-        # don't normalize to handle multi gpu summing correctly
         return z
 
-    def novelty(self, z: torch.Tensor, global_step: int) -> float:
+    def novelty(self, zn: torch.Tensor, global_step: int) -> float:
         """
         Directional novelty: 1 - ||projection||^2 on normalized z.
         Pure angular novelty, independent of magnitude.
+
+        Args:
+            zn: Normalized sketch vector (||zn|| = 1)
+            global_step: Current training step
         """
-        z_norm = z.norm()
-        if torch.isnan(z_norm) or z_norm.item() < 1e-12:
-            novelty_value = 0.0
+        W_T = self.subspace.get_basis_T()
+        if W_T.numel() == 0 or W_T.shape[0] == 0:
+            novelty_value = 1.0
         else:
-            zn = z / z_norm
-            W = self.subspace.get_basis()  # (m, r), assumed orthonormal columns
-            if W.numel() == 0 or W.shape[1] == 0:
-                novelty_value = 1.0  # no basis yet: fully novel
-            else:
-                # Directional novelty: 1 - ||W^T zn||^2
-                coeff = W.T @ zn
-                novelty_value = max(0.0, 1.0 - float((coeff * coeff).sum()))
+            coeff = W_T @ zn
+            novelty_value = max(0.0, 1.0 - float((coeff * coeff).sum()))
 
         self.novelty_ema = self.ema_decay * self.novelty_ema + (
             1 - self.ema_decay
@@ -253,14 +248,8 @@ class HeadGradientGate:
 
         return novelty > self.current_novelty_threshold
 
-    def update(self, z: torch.Tensor, count_increment: float) -> None:
+    def update(self, zn: torch.Tensor, count_increment: float) -> None:
         """Update streaming basis with normalized accepted sketch."""
-        z_norm = z.norm()
-        if torch.isnan(z_norm) or z_norm.item() < 1e-12:
-            zn = z
-        else:
-            zn = z / z_norm
-
         self.subspace.update(zn)
         self.accepted_count += count_increment
 
