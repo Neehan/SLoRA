@@ -47,6 +47,7 @@ class SLoRATrainer(Trainer):
         self.novelty_score_ema = 1.0  # EMA of novelty scores (ratio), not raw energy
         self.last_accept = 1
         self.lora_params: Optional[list[torch.nn.Parameter]] = None
+        self.num_accepted_in_window: Optional[int] = None
 
     def create_optimizer_and_scheduler(self, num_training_steps: int) -> None:
         """Wrap optimizer and scheduler with gating logic."""
@@ -179,8 +180,10 @@ class SLoRATrainer(Trainer):
 
         ret_loss = loss.detach()
 
+        num_accepted = self.optimizer.get_num_accepted()
+        self.num_accepted_in_window = int(num_accepted)
+
         if accept:
-            num_accepted = self.optimizer.get_num_accepted()
 
             if self.lora_params is None:
                 self.lora_params = get_lora_parameters(model)
@@ -189,7 +192,9 @@ class SLoRATrainer(Trainer):
                 if param.grad is not None:
                     param.grad.mul_(num_accepted / (num_accepted + 1))
 
-            self.accelerator.backward(loss * self.args.gradient_accumulation_steps / (num_accepted + 1))
+            self.accelerator.backward(
+                loss * self.args.gradient_accumulation_steps / (num_accepted + 1)
+            )
 
             grad_norm = compute_lora_grad_norm(self.lora_params)
             self.gate.update(z, grad_norm, count_increment)
@@ -210,7 +215,8 @@ class SLoRATrainer(Trainer):
             logs["gate/current_novelty_threshold"] = self.gate.current_novelty_threshold
             logs["gate/accept"] = self.last_accept
             logs["gate/acceptance_rate"] = self.gate.acceptance_rate()
-            logs["gate/num_accepted_in_window"] = self.optimizer.get_num_accepted()
+            if self.num_accepted_in_window is not None:
+                logs["gate/num_accepted_in_window"] = float(self.num_accepted_in_window)
         super().log(logs, start_time)
 
     def _save_checkpoint(self, model, trial, metrics=None):
@@ -227,6 +233,7 @@ class SLoRATrainer(Trainer):
                 "novelty_score_avg": self.novelty_score_ema,
                 "novelty_energy_ema": self.gate.novelty_ema,
                 "last_accept": self.last_accept,
+                "num_accepted_in_window": self.num_accepted_in_window,
             }
 
             gate_file = Path(checkpoint_folder) / "gate_metrics.json"
