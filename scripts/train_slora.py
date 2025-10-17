@@ -30,7 +30,9 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
 
 def compute_metrics(eval_pred):
-    return {}
+    # Hugging Face injects eval_loss automatically; preserve it
+    metrics = eval_pred.metrics if hasattr(eval_pred, "metrics") else {}
+    return metrics
 
 
 def main():
@@ -167,6 +169,7 @@ def main():
 
     if accelerator.is_main_process and config["logging"]["report_to"] == "wandb":
         import wandb
+
         wandb.define_metric("filter_step")
         wandb.define_metric("filter/*", step_metric="filter_step")
 
