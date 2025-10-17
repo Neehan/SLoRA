@@ -109,9 +109,6 @@ def main():
         os.environ["WANDB_RUN_ID"] = run.id
         os.environ["WANDB_PROJECT"] = config["logging"]["wandb_project"]
 
-        wandb.define_metric("filter_step")
-        wandb.define_metric("filter/*", step_metric="filter_step")
-
     if config["slora"].get("enable", True):
         model = accelerator.prepare(model)
         accepted_indices = filter_pass(
@@ -167,6 +164,11 @@ def main():
         compute_metrics=compute_metrics,
         preprocess_logits_for_metrics=lambda logits, labels: logits[0],
     )
+
+    if accelerator.is_main_process and config["logging"]["report_to"] == "wandb":
+        import wandb
+        wandb.define_metric("filter_step")
+        wandb.define_metric("filter/*", step_metric="filter_step")
 
     logger.info("Starting training")
     trainer.train()
