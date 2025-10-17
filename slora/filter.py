@@ -66,17 +66,16 @@ def filter_pass(
     logger.info("Starting filtering pass...")
     model.eval()
 
-    # Compile forward wrapper for speedup (filter pass only, no gradients)
     # Extract base model without PEFT adapters (filter only needs pretrained weights)
     unwrapped_model = accelerator.unwrap_model(model)
     base_model = unwrapped_model.get_base_model()
 
-    # Compile individual decoder layers instead of full model to avoid transformers wrapper issues
-    for layer in base_model.model.layers:
-        layer.forward = torch.compile(layer.forward, backend="inductor", mode="max-autotune")
-
     filter_forward = FilterForward(base_model).to(accelerator.device)
     filter_forward.eval()
+
+    # Compile individual layers with reduce-overhead mode (max-autotune too slow)
+    for layer in base_model.model.layers:
+        layer.forward = torch.compile(layer.forward, backend="inductor", mode="reduce-overhead")
     logger.info("Compiled filter forward pass")
 
     filter_start_time = time.time()
