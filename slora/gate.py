@@ -263,8 +263,3 @@ class HeadGradientGate:
     def acceptance_rate(self) -> float:
         """Compute overall acceptance rate."""
         return self.acceptance_rate_ema
-
-    def reset(self) -> None:
-        """Reset gate to initial state."""
-        self.subspace.reset()
-        self.accepted_count = 0

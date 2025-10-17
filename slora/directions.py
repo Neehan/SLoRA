@@ -134,8 +134,3 @@ class FrequentDirections:
             W: Orthonormal matrix (columns are orthogonal unit vectors)
         """
         return self.W.clone()
-
-    def reset(self) -> None:
-        """Reset sketch to empty (clears all accepted vectors)."""
-        self.W = torch.empty(self.m, 0, dtype=self.dtype, device=self.device)
-        self.update_count = 0

@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 
-def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
+def analyze_runs(baseline_dir: str, slora_dir: str):
     """Compare baseline and SLoRA training runs."""
     baseline_path = Path(baseline_dir)
     slora_path = Path(slora_dir)
@@ -141,10 +141,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--baseline", type=str, required=True)
     parser.add_argument("--slora", type=str, required=True)
-    parser.add_argument("--output", type=str, default="reports/analysis.md")
     args = parser.parse_args()
 
-    analyze_runs(args.baseline, args.slora, args.output)
+    analyze_runs(args.baseline, args.slora)
 
 
 if __name__ == "__main__":
