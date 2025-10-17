@@ -13,12 +13,12 @@ from transformers import (
     TrainingArguments,
     BitsAndBytesConfig,
     DataCollatorForLanguageModeling,
-    Trainer,
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from accelerate import Accelerator
 
 from slora.filter import filter_pass
+from slora.trainers.vanilla_trainer import VanillaTrainer
 from slora.utils.seed import set_seed
 from slora.utils.logging import setup_logging
 from slora.utils.data import prepare_data
@@ -153,7 +153,7 @@ def main():
         ddp_find_unused_parameters=False,
     )
 
-    trainer = Trainer(
+    trainer = VanillaTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,  # type: ignore
