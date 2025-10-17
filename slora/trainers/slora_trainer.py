@@ -210,6 +210,7 @@ class SLoRATrainer(Trainer):
             logs["gate/current_novelty_threshold"] = self.gate.current_novelty_threshold
             logs["gate/accept"] = self.last_accept
             logs["gate/acceptance_rate"] = self.gate.acceptance_rate()
+            logs["gate/num_accepted_in_window"] = self.optimizer.get_num_accepted()
         super().log(logs, start_time)
 
     def _save_checkpoint(self, model, trial, metrics=None):
