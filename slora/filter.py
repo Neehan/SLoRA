@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 from slora.gate import HeadGradientGate
 from torch.utils.data import DataLoader
 import wandb
+import os
 
 
 class FilterForward(nn.Module):
@@ -69,10 +70,14 @@ def filter_pass(
     # Extract base model without PEFT adapters (filter only needs pretrained weights)
     unwrapped_model = accelerator.unwrap_model(model)
     base_model = unwrapped_model.get_base_model()
+
     filter_forward = FilterForward(base_model).to(accelerator.device)
     filter_forward.eval()
 
+    # Disable transformers' generic output collection wrapper for torch.compile
+    os.environ["TRANSFORMERS_DISABLE_TELEMETRY"] = "1"
     torch._dynamo.config.suppress_errors = True
+
     filter_forward = torch.compile(
         filter_forward,
         backend="inductor",
