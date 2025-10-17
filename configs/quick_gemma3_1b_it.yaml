@@ -15,7 +15,7 @@ slora:
   seed: 0
   reorth_every: 32
   k_topk: 128
-  random: true
+  random: false
   subspace_decay: 0.99
 
 logging:
