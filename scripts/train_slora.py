@@ -154,6 +154,7 @@ def main():
         report_to=config["logging"]["report_to"],
         run_name=config["logging"]["wandb_run_name"],
         ddp_find_unused_parameters=False,
+        include_for_metrics=["loss"],
     )
 
     trainer = Trainer(
