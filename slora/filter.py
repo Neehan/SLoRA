@@ -41,8 +41,12 @@ def filter_pass(
     novelty_score_ema = 1.0
     last_accept = 1
 
+    import time
+
     logger.info("Starting filtering pass...")
     model.eval()
+
+    filter_start_time = time.time()
 
     dataloader = DataLoader(
         dataset,
@@ -110,11 +114,16 @@ def filter_pass(
                     )
 
     accepted_batch_indices = dataset_filter.get_accepted_indices()
-    total_batches = len(dataloader)
+    filter_time = time.time() - filter_start_time
+
     logger.info(
-        f"Filtering complete: {len(accepted_batch_indices)}/{total_batches} batches accepted "
+        f"Filtering complete in {filter_time:.1f}s: "
+        f"{len(accepted_batch_indices)}/{total_batches} batches accepted "
         f"({100.0 * len(accepted_batch_indices) / total_batches:.1f}%)"
     )
+
+    if accelerator.is_main_process:
+        wandb.log({"filter/total_time_seconds": filter_time})
 
     batch_size = config["training"]["per_device_train_batch_size"]
     accepted_sample_indices = []
