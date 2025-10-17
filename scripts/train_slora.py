@@ -163,8 +163,8 @@ def main():
         eval_dataset=eval_dataset,  # type: ignore
         processing_class=tokenizer,
         data_collator=data_collator,
-        compute_metrics=compute_metrics,
-        preprocess_logits_for_metrics=lambda logits, labels: logits[0],
+        # compute_metrics=compute_metrics,
+        # preprocess_logits_for_metrics=lambda logits, labels: logits[0],
     )
 
     if accelerator.is_main_process and config["logging"]["report_to"] == "wandb":
