@@ -81,7 +81,8 @@ def filter_pass(
 
         if batch_idx % grad_accum_steps == 0:
             optimizer_step = batch_idx // grad_accum_steps
-            if optimizer_step % 10 == 0:
+            logging_steps = config["training"].get("logging_steps", 10)
+            if optimizer_step % logging_steps == 0:
                 logger.info(
                     f"Filter step {optimizer_step}, "
                     f"acceptance_rate={gate.acceptance_rate():.3f}"
@@ -89,14 +90,14 @@ def filter_pass(
                 if accelerator.is_main_process:
                     wandb.log(
                         {
-                            "filter_step": optimizer_step,
                             "filter/gate/novelty": novelty,
                             "filter/gate/novelty_avg": novelty_score_ema,
                             "filter/gate/novelty_energy_ema": gate.novelty_ema,
                             "filter/gate/current_novelty_threshold": gate.current_novelty_threshold,
                             "filter/gate/accept": last_accept,
                             "filter/gate/acceptance_rate": gate.acceptance_rate(),
-                        }
+                        },
+                        step=optimizer_step,
                     )
 
     accepted_batch_indices = dataset_filter.get_accepted_indices()
