@@ -74,11 +74,9 @@ def filter_pass(
     filter_forward = FilterForward(base_model).to(accelerator.device)
     filter_forward.eval()
 
-    # Mark transformers output wrapper as non-compilable to avoid KeyError
-    import transformers.utils.generic
-    transformers.utils.generic.CaptureIntermediateOutputsWrapper = torch._dynamo.disable(
-        transformers.utils.generic.CaptureIntermediateOutputsWrapper
-    )
+    # Configure dynamo to handle transformers' output collection
+    torch._dynamo.config.capture_scalar_outputs = True
+    torch._dynamo.config.guard_nn_modules = False
 
     filter_forward = torch.compile(
         filter_forward,
