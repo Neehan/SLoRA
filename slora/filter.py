@@ -73,19 +73,28 @@ def filter_pass(
             f"Gate will never exit burn-in phase! Consider lowering burn_in or using more data."
         )
 
+    forward_time_total = 0.0
+    gating_time_total = 0.0
+
     with torch.inference_mode():
         for batch_idx, batch in enumerate(dataloader):
             if batch_idx >= total_batches:
                 break
+
+            forward_start = time.time()
             outputs = model(**batch, output_hidden_states=True)
             hidden_states = outputs.hidden_states[-1]
             logits = outputs.logits
             labels = batch["labels"]
+            forward_time_total += time.time() - forward_start
 
             optimizer_step = batch_idx // grad_accum_steps
+
+            gating_start = time.time()
             novelty, accept = dataset_filter.filter_batch(
                 batch_idx, hidden_states, logits, labels, optimizer_step
             )
+            gating_time_total += time.time() - gating_start
 
             novelty_score_ema = (
                 gate.ema_decay * novelty_score_ema + (1 - gate.ema_decay) * novelty
@@ -118,10 +127,17 @@ def filter_pass(
     accepted_batch_indices = dataset_filter.get_accepted_indices()
     filter_time = time.time() - filter_start_time
 
+    forward_pct = 100.0 * forward_time_total / filter_time
+    gating_pct = 100.0 * gating_time_total / filter_time
+
     logger.info(
         f"Filtering complete in {filter_time:.1f}s: "
         f"{len(accepted_batch_indices)}/{total_batches} batches accepted "
         f"({100.0 * len(accepted_batch_indices) / total_batches:.1f}%)"
+    )
+    logger.info(
+        f"Time breakdown - Forward: {forward_time_total:.1f}s ({forward_pct:.1f}%), "
+        f"Gating: {gating_time_total:.1f}s ({gating_pct:.1f}%)"
     )
 
     per_device_batch_size = gate_config["per_device_train_batch_size"]
