@@ -52,7 +52,13 @@ def filter_pass(
     )
     dataloader = accelerator.prepare(dataloader)
 
+    max_steps = config["training"].get("max_steps", -1)
+    grad_accum_steps = config["training"]["gradient_accumulation_steps"]
+    max_batches = max_steps * grad_accum_steps if max_steps > 0 else len(dataloader)
+
     for batch_idx, batch in enumerate(dataloader):
+        if batch_idx >= max_batches:
+            break
         with torch.no_grad():
             outputs = model(**batch, output_hidden_states=True)
             hidden_states = outputs.hidden_states[-1]
@@ -68,12 +74,11 @@ def filter_pass(
             )
             last_accept = int(accept)
 
-        grad_accum_steps = config["training"]["gradient_accumulation_steps"]
         if batch_idx % grad_accum_steps == 0:
             optimizer_step = batch_idx // grad_accum_steps
             if optimizer_step % 10 == 0:
                 logger.info(
-                    f"Filtered {batch_idx}/{len(dataloader)} batches (step {optimizer_step}), "
+                    f"Filter step {optimizer_step}/{max_steps if max_steps > 0 else '?'}, "
                     f"acceptance_rate={gate.acceptance_rate():.3f}"
                 )
                 if accelerator.is_main_process:
@@ -91,8 +96,8 @@ def filter_pass(
 
     accepted_batch_indices = dataset_filter.get_accepted_indices()
     logger.info(
-        f"Filtering complete: {len(accepted_batch_indices)}/{len(dataloader)} batches accepted "
-        f"({100.0 * len(accepted_batch_indices) / len(dataloader):.1f}%)"
+        f"Filtering complete: {len(accepted_batch_indices)}/{max_batches} batches accepted "
+        f"({100.0 * len(accepted_batch_indices) / max_batches:.1f}%)"
     )
 
     batch_size = config["training"]["per_device_train_batch_size"]

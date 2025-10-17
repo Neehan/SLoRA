@@ -108,6 +108,8 @@ def main():
         train_dataset = train_dataset.select(accepted_indices)  # type: ignore
         logger.info(f"Filtered train dataset size: {len(train_dataset)}")
 
+    os.environ["WANDB_RESUME"] = "allow"
+
     training_args = TrainingArguments(
         output_dir=config["training"]["output_dir"],
         num_train_epochs=config["training"]["num_train_epochs"],
