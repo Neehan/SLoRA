@@ -11,11 +11,11 @@ slora:
   target_accept_rate: 0.40
   initial_threshold: 0.05
   controller_lr: 0.01
-  burn_in: 50
+  burn_in: 100
   seed: 0
   reorth_every: 32
   k_topk: 128
-  random: true
+  random: false
   subspace_decay: 0.99
 
 logging:

@@ -87,6 +87,7 @@ class FrequentDirections:
         if self.W.shape[1] == 0:
             # First vector: no existing basis to decay
             self.W = z.unsqueeze(1)
+            self.W_T = self.W.T
         else:
             # Get SVD of existing basis
             U, S, Vt = torch.linalg.svd(self.W, full_matrices=False)
