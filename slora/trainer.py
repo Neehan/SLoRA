@@ -18,26 +18,36 @@ class SLoRATrainer(Trainer):
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
-        self.gate_config = gate_config
-
         if gate_config is not None:
-            original_train_dataset = self.train_dataset
+            original_train_dataset = kwargs["train_dataset"]
 
             from slora.utils.logging import setup_logging
+            import wandb
+            import os
             logger = setup_logging()
 
+            if kwargs["args"].process_index == 0 and "wandb" in kwargs["args"].report_to:
+                wandb.init(
+                    project=os.getenv("WANDB_PROJECT", "huggingface"),
+                    name=kwargs["args"].run_name,
+                    reinit=False,
+                    resume="allow"
+                )
+
             accepted_indices = filter_pass(
-                self.model,
+                kwargs["model"],
                 original_train_dataset,
                 gate_config,
-                self.accelerator,
+                kwargs["args"].accelerator,
                 logger,
-                self.data_collator
+                kwargs["data_collator"]
             )
 
-            self.train_dataset = Subset(original_train_dataset, accepted_indices)
+            kwargs["train_dataset"] = Subset(original_train_dataset, accepted_indices)
             logger.info(f"Filtered train dataset: {len(accepted_indices)}/{len(original_train_dataset)} samples")
+
+        super().__init__(*args, **kwargs)
+        self.gate_config = gate_config
 
     def _save_checkpoint(self, model, trial, metrics=None):
         """Save checkpoint."""
