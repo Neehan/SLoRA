@@ -19,6 +19,11 @@ class TensorSketch:
         self.bucket_1, self.sign_1 = self._init_hash_params(d1, seed)
         self.bucket_2, self.sign_2 = self._init_hash_params(d2, seed + 1)
 
+        # Pre-allocate buffers for sketch computation (reused across batches)
+        self._s_h_buffer = None
+        self._s_e_buffer = None
+        self._current_batch_size = 0
+
     def _init_hash_params(
         self, dim: int, seed: int
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -75,12 +80,22 @@ class TensorSketch:
         """
         N = dense_vecs.shape[0]
 
-        s_h = torch.zeros(N, self.m, dtype=torch.float32, device=self.device)
+        # Allocate or reuse buffers
+        if self._s_h_buffer is None or self._current_batch_size != N:
+            self._s_h_buffer = torch.zeros(N, self.m, dtype=torch.float32, device=self.device)
+            self._s_e_buffer = torch.zeros(N, self.m, dtype=torch.float32, device=self.device)
+            self._current_batch_size = N
+        else:
+            self._s_h_buffer.zero_()
+            self._s_e_buffer.zero_()
+
+        s_h = self._s_h_buffer
+        s_e = self._s_e_buffer
+
         s_h.index_add_(
             1, self.bucket_1, self.sign_1.float().unsqueeze(0) * dense_vecs.float()
         )
 
-        s_e = torch.zeros(N, self.m, dtype=torch.float32, device=self.device)
         sel_signs = self.sign_2[sparse_indices]
         sel_buckets = self.bucket_2[sparse_indices]
 

@@ -46,6 +46,9 @@ def filter_pass(
     logger.info("Starting filtering pass...")
     model.eval()
 
+    # Compile model forward pass for ~20-40% speedup
+    model_forward = torch.compile(model.forward, mode="reduce-overhead")
+
     filter_start_time = time.time()
 
     dataloader = DataLoader(
@@ -77,7 +80,7 @@ def filter_pass(
         for batch_idx, batch in enumerate(dataloader):
             if batch_idx >= total_batches:
                 break
-            outputs = model(**batch, output_hidden_states=True)
+            outputs = model_forward(**batch, output_hidden_states=True)
             hidden_states = outputs.hidden_states[-1]
             logits = outputs.logits
             labels = batch["labels"]
