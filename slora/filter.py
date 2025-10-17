@@ -73,9 +73,10 @@ def filter_pass(
     filter_forward = FilterForward(base_model).to(accelerator.device)
     filter_forward.eval()
 
-    # Compile individual layers with reduce-overhead mode (max-autotune too slow)
+    # Compile individual layers - disable cudagraphs to avoid tensor aliasing issues
+    torch._inductor.config.triton.cudagraphs = False
     for layer in base_model.model.layers:
-        layer.forward = torch.compile(layer.forward, backend="inductor", mode="reduce-overhead")
+        layer.forward = torch.compile(layer.forward, backend="inductor")
     logger.info("Compiled filter forward pass")
 
     filter_start_time = time.time()
