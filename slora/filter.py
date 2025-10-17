@@ -1,9 +1,30 @@
 #!/usr/bin/env python3
 import torch
+import torch.nn as nn
 from typing import List, Dict, Any
 from slora.gate import HeadGradientGate
 from torch.utils.data import DataLoader
 import wandb
+
+
+class FilterForward(nn.Module):
+    """Compiled wrapper for filter pass forward that returns only tensors."""
+
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+        self.model.config.use_cache = False
+        self.model.config.output_hidden_states = True
+
+    def forward(self, **inputs):
+        outputs = self.model(
+            **inputs,
+            output_hidden_states=True,
+            use_cache=False,
+            return_dict=False,
+        )
+        logits, _, hidden_states, *_ = outputs
+        return hidden_states[-1], logits
 
 
 def filter_pass(
@@ -46,6 +67,19 @@ def filter_pass(
     logger.info("Starting filtering pass...")
     model.eval()
 
+    # Compile forward wrapper for speedup (filter pass only, no gradients)
+    base_model = accelerator.unwrap_model(model)
+    filter_forward = FilterForward(base_model).to(accelerator.device)
+    filter_forward.eval()
+    filter_forward = torch.compile(
+        filter_forward,
+        backend="inductor",
+        mode="max-autotune",
+        fullgraph=True,
+        dynamic=False,
+    )
+    logger.info("Compiled filter forward pass")
+
     filter_start_time = time.time()
 
     dataloader = DataLoader(
@@ -82,9 +116,13 @@ def filter_pass(
                 break
 
             forward_start = time.time()
-            outputs = model(**batch, output_hidden_states=True)
-            hidden_states = outputs.hidden_states[-1]
-            logits = outputs.logits
+            forward_inputs = {
+                k: v
+                for k, v in batch.items()
+                if k
+                in ("input_ids", "attention_mask", "position_ids", "token_type_ids")
+            }
+            hidden_states, logits = filter_forward(**forward_inputs)
             labels = batch["labels"]
             forward_time_total += time.time() - forward_start
 
@@ -191,9 +229,7 @@ class DatasetFilter:
         accept = self.gate.accept(novelty, optimizer_step)
 
         if self.accelerator.num_processes > 1:
-            accept_tensor = torch.tensor(
-                [int(accept)], device=self.accelerator.device
-            )
+            accept_tensor = torch.tensor([int(accept)], device=self.accelerator.device)
             torch.distributed.all_reduce(
                 accept_tensor, op=torch.distributed.ReduceOp.MIN
             )
