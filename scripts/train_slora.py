@@ -30,9 +30,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
 
 def compute_metrics(eval_pred):
-    # Hugging Face injects eval_loss automatically; preserve it
-    metrics = eval_pred.metrics if hasattr(eval_pred, "metrics") else {}
-    return metrics
+    return {}
 
 
 def main():
@@ -153,7 +151,6 @@ def main():
         report_to=config["logging"]["report_to"],
         run_name=config["logging"]["wandb_run_name"],
         ddp_find_unused_parameters=False,
-        include_for_metrics=["loss"],
     )
 
     trainer = Trainer(
@@ -163,8 +160,6 @@ def main():
         eval_dataset=eval_dataset,  # type: ignore
         processing_class=tokenizer,
         data_collator=data_collator,
-        # compute_metrics=compute_metrics,
-        # preprocess_logits_for_metrics=lambda logits, labels: logits[0],
     )
 
     if accelerator.is_main_process and config["logging"]["report_to"] == "wandb":
