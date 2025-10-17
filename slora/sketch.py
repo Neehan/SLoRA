@@ -42,9 +42,8 @@ class TensorSketch:
                 low=0, high=self.m, size=(dim,), generator=generator, dtype=torch.long
             )
             sign = (
-                torch.randint(
-                    0, 2, (dim,), generator=generator, dtype=torch.int8
-                ).mul_(2)
+                torch.randint(0, 2, (dim,), generator=generator, dtype=torch.int8)
+                .mul_(2)
                 .sub_(1)
                 .to(torch.int8)
             )
@@ -82,12 +81,16 @@ class TensorSketch:
 
         # Allocate or reuse buffers
         if self._s_h_buffer is None or self._current_batch_size != N:
-            self._s_h_buffer = torch.zeros(N, self.m, dtype=torch.float32, device=self.device)
-            self._s_e_buffer = torch.zeros(N, self.m, dtype=torch.float32, device=self.device)
+            self._s_h_buffer = torch.zeros(
+                N, self.m, dtype=torch.float32, device=self.device
+            )
+            self._s_e_buffer = torch.zeros(
+                N, self.m, dtype=torch.float32, device=self.device
+            )
             self._current_batch_size = N
         else:
             self._s_h_buffer.zero_()
-            self._s_e_buffer.zero_()
+            self._s_e_buffer.zero_()  # type: ignore
 
         s_h = self._s_h_buffer
         s_e = self._s_e_buffer
@@ -107,7 +110,7 @@ class TensorSketch:
             .expand(-1, sparse_indices.size(1))
             .reshape(-1)
         )
-        s_e.index_put_((batch_idx, buckets_flat), weighted, accumulate=True)
+        s_e.index_put_((batch_idx, buckets_flat), weighted, accumulate=True)  # type: ignore
 
         fft_h = torch.fft.fft(s_h, dim=1)
         fft_e = torch.fft.fft(s_e, dim=1)
@@ -115,6 +118,6 @@ class TensorSketch:
 
         # Scale by 1/√m to preserve inner products: E[⟨sketch(a⊗b), sketch(a'⊗b')⟩] = ⟨a,a'⟩⟨b,b'⟩
         # Without this, FFT convolution inflates norms by √m and inner products by m
-        z_batch /= self.m ** 0.5
+        z_batch /= self.m**0.5
 
         return z_batch

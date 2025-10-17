@@ -192,6 +192,9 @@ def main():
     logger.info("Starting training")
     trainer.train()
 
+    logger.info("Running final evaluation")
+    trainer.evaluate()
+
     logger.info("Saving final model")
     trainer.save_model()
     tokenizer.save_pretrained(config["training"]["output_dir"])
