@@ -62,7 +62,7 @@ slora:
 data:
   dataset_name: allenai/tulu-3-sft-mixture
   train_split: "train[:128000]"
-  eval_split: "train[128000:130000]"
+  eval_split: "train[128000:138000]"
   max_seq_length: 512
   prompt_field: prompt
   response_field: response
