@@ -18,7 +18,7 @@ from transformers import (
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from accelerate import Accelerator
 
-from slora.slora import slora_filter
+from slora.filter import filter_pass
 from slora.utils.seed import set_seed
 from slora.utils.logging import setup_logging
 from slora.utils.data import prepare_data
@@ -89,12 +89,23 @@ def main():
     train_dataset, eval_dataset = prepare_data(config, tokenizer, logger)
 
     if config["slora"].get("enable", True):
+        import wandb
+        if accelerator.is_main_process:
+            wandb.init(
+                project=config["logging"].get("wandb_project", "slora"),
+                name=config["logging"].get("wandb_run_name", None),
+                config=config,
+            )
+
         model = accelerator.prepare(model)
-        accepted_indices = slora_filter(
+        accepted_indices = filter_pass(
             model, train_dataset, config, accelerator, logger
         )
         train_dataset = train_dataset.select(accepted_indices)  # type: ignore
         logger.info(f"Filtered train dataset size: {len(train_dataset)}")
+
+        if accelerator.is_main_process:
+            wandb.finish()
 
     training_args = TrainingArguments(
         output_dir=config["training"]["output_dir"],

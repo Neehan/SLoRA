@@ -1,5 +1,5 @@
 from slora.gate import HeadGradientGate
-from slora.slora import slora_filter
+from slora.filter import filter_pass
 
 __version__ = "0.1.0"
-__all__ = ["HeadGradientGate", "slora_filter"]
+__all__ = ["HeadGradientGate", "filter_pass"]

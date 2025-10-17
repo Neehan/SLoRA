@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 import wandb
 
 
-def slora_filter(model, dataset, config: Dict[str, Any], accelerator, logger) -> List[int]:
+def filter_pass(model, dataset, config: Dict[str, Any], accelerator, logger) -> List[int]:
     """
     Run filtering pass to get accepted sample indices.
 
@@ -39,15 +39,6 @@ def slora_filter(model, dataset, config: Dict[str, Any], accelerator, logger) ->
     novelty_score_ema = 1.0
     last_accept = 1
 
-    if accelerator.is_main_process:
-        wandb.log({
-            "gate/d_hidden": model_config.hidden_size,
-            "gate/m": gate_params["m"],
-            "gate/k": gate_params["k"],
-            "gate/target_accept_rate": gate_params["target_accept_rate"],
-            "gate/initial_threshold": gate_params["initial_threshold"],
-        })
-
     logger.info("Starting filtering pass...")
     model.eval()
 
@@ -60,7 +51,6 @@ def slora_filter(model, dataset, config: Dict[str, Any], accelerator, logger) ->
 
     for batch_idx, batch in enumerate(dataloader):
         with torch.no_grad():
-            batch = {k: v.to(device) for k, v in batch.items()}
             outputs = model(**batch, output_hidden_states=True)
             hidden_states = outputs.hidden_states[-1]
             logits = outputs.logits
