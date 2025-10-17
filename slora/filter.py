@@ -77,8 +77,6 @@ def filter_pass(
         filter_forward,
         backend="inductor",
         mode="max-autotune",
-        fullgraph=True,
-        dynamic=False,
     )
     logger.info("Compiled filter forward pass")
 
