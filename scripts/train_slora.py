@@ -164,6 +164,7 @@ def main():
         processing_class=tokenizer,
         data_collator=data_collator,
         compute_metrics=compute_metrics,
+        preprocess_logits_for_metrics=lambda logits, labels: logits[0],
     )
 
     logger.info("Starting training")

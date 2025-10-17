@@ -125,15 +125,19 @@ class HeadGradientGate:
         )
 
         sel_logits = torch.gather(logits_flat, 1, idx)
-        full_probs = torch.softmax(logits_flat, dim=1)
-        sel_probs = torch.gather(full_probs, 1, idx)
+        logits_max = logits_flat.max(dim=1, keepdim=True).values
+        sel_logits_shifted = sel_logits - logits_max
+        sel_exp = torch.exp(sel_logits_shifted)
 
-        rest_prob = (1 - sel_probs.sum(dim=1, keepdim=True)).clamp(min=0.0)
-        sel_probs_with_rest = torch.cat([sel_probs, rest_prob], dim=1)
+        rest_sum = (torch.exp(logits_flat - logits_max).sum(dim=1, keepdim=True) - sel_exp.sum(dim=1, keepdim=True))
+
+        sel_exp_with_rest = torch.cat([sel_exp, rest_sum], dim=1)
+        z_partition = sel_exp_with_rest.sum(dim=1, keepdim=True)
+        sel_probs_with_rest = sel_exp_with_rest / z_partition
 
         is_gold = idx == safe_labels.unsqueeze(1)
         is_gold_with_rest = torch.cat(
-            [is_gold, torch.zeros_like(rest_prob, dtype=torch.bool)], dim=1
+            [is_gold, torch.zeros((is_gold.size(0), 1), dtype=torch.bool, device=is_gold.device)], dim=1
         )
 
         sel_errors = sel_probs_with_rest - is_gold_with_rest.to(
@@ -142,10 +146,10 @@ class HeadGradientGate:
         sel_errors = sel_errors * valid_mask.unsqueeze(1).float()
 
         idx_with_rest = torch.cat(
-            [idx, torch.zeros_like(rest_prob, dtype=torch.long)], dim=1
+            [idx, torch.zeros((idx.size(0), 1), dtype=torch.long, device=idx.device)], dim=1
         )
         is_rest = torch.cat(
-            [torch.zeros_like(is_gold), torch.ones_like(rest_prob, dtype=torch.bool)],
+            [torch.zeros_like(is_gold), torch.ones((is_gold.size(0), 1), dtype=torch.bool, device=is_gold.device)],
             dim=1,
         )
 

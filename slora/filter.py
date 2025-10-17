@@ -73,14 +73,16 @@ def filter_pass(
             f"Gate will never exit burn-in phase! Consider lowering burn_in or using more data."
         )
 
-    for batch_idx, batch in enumerate(dataloader):
-        if batch_idx >= total_batches:
-            break
-        with torch.no_grad():
-            outputs = model(**batch, output_hidden_states=True)
+    past_key_values = None
+    with torch.inference_mode():
+        for batch_idx, batch in enumerate(dataloader):
+            if batch_idx >= total_batches:
+                break
+            outputs = model(**batch, output_hidden_states=True, use_cache=True, past_key_values=past_key_values)
             hidden_states = outputs.hidden_states[-1]
             logits = outputs.logits
             labels = batch["labels"]
+            past_key_values = outputs.past_key_values
 
             optimizer_step = batch_idx // grad_accum_steps
             novelty, accept = dataset_filter.filter_batch(
@@ -92,26 +94,26 @@ def filter_pass(
             )
             last_accept = int(accept)
 
-        if batch_idx % grad_accum_steps == 0:
-            optimizer_step = batch_idx // grad_accum_steps
-            logging_steps = config["training"].get("logging_steps", 10)
-            if optimizer_step % logging_steps == 0:
-                logger.info(
-                    f"Filter step {optimizer_step}, "
-                    f"acceptance_rate={gate.acceptance_rate():.3f}"
-                )
-                if accelerator.is_main_process:
-                    wandb.log(
-                        {
-                            "filter/gate/novelty": novelty,
-                            "filter/gate/novelty_avg": novelty_score_ema,
-                            "filter/gate/novelty_energy_ema": gate.novelty_ema,
-                            "filter/gate/current_novelty_threshold": gate.current_novelty_threshold,
-                            "filter/gate/accept": last_accept,
-                            "filter/gate/acceptance_rate": gate.acceptance_rate(),
-                        },
-                        step=optimizer_step,
+            if batch_idx % grad_accum_steps == 0:
+                optimizer_step = batch_idx // grad_accum_steps
+                logging_steps = config["training"].get("logging_steps", 10)
+                if optimizer_step % logging_steps == 0:
+                    logger.info(
+                        f"Filter step {optimizer_step}, "
+                        f"acceptance_rate={gate.acceptance_rate():.3f}"
                     )
+                    if accelerator.is_main_process:
+                        wandb.log(
+                            {
+                                "filter/gate/novelty": novelty,
+                                "filter/gate/novelty_avg": novelty_score_ema,
+                                "filter/gate/novelty_energy_ema": gate.novelty_ema,
+                                "filter/gate/current_novelty_threshold": gate.current_novelty_threshold,
+                                "filter/gate/accept": last_accept,
+                                "filter/gate/acceptance_rate": gate.acceptance_rate(),
+                            },
+                            step=optimizer_step,
+                        )
 
     accepted_batch_indices = dataset_filter.get_accepted_indices()
     filter_time = time.time() - filter_start_time
@@ -164,31 +166,30 @@ class DatasetFilter:
             novelty: the novelty score for this batch
             accept: whether this batch was accepted
         """
-        with torch.no_grad():
-            z = self.gate.embed(hidden_states, logits, labels)
+        z = self.gate.embed(hidden_states, logits, labels)
 
-            if self.accelerator.num_processes > 1:
-                torch.distributed.all_reduce(z, op=torch.distributed.ReduceOp.SUM)
+        if self.accelerator.num_processes > 1:
+            torch.distributed.all_reduce(z, op=torch.distributed.ReduceOp.SUM)
 
-            novelty = self.gate.novelty(z, optimizer_step)
-            accept = self.gate.accept(novelty, optimizer_step)
+        novelty = self.gate.novelty(z, optimizer_step)
+        accept = self.gate.accept(novelty, optimizer_step)
 
-            if self.accelerator.num_processes > 1:
-                accept_tensor = torch.tensor(
-                    [int(accept)], device=self.accelerator.device
-                )
-                torch.distributed.all_reduce(
-                    accept_tensor, op=torch.distributed.ReduceOp.MIN
-                )
-                accept = bool(accept_tensor.item())
+        if self.accelerator.num_processes > 1:
+            accept_tensor = torch.tensor(
+                [int(accept)], device=self.accelerator.device
+            )
+            torch.distributed.all_reduce(
+                accept_tensor, op=torch.distributed.ReduceOp.MIN
+            )
+            accept = bool(accept_tensor.item())
 
-            count_increment = 1.0 / self.accelerator.num_processes
+        count_increment = 1.0 / self.accelerator.num_processes
 
-            if accept:
-                self.accepted_indices.append(batch_idx)
-                self.gate.update(z, count_increment)
+        if accept:
+            self.accepted_indices.append(batch_idx)
+            self.gate.update(z, count_increment)
 
-            self.gate.step(optimizer_step, accept)
+        self.gate.step(optimizer_step, accept)
 
         return novelty, accept
 
