@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import torch
 from transformers import Trainer
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple, Union
+from torch import nn
 
 
 class VanillaTrainer(Trainer):
@@ -12,6 +13,19 @@ class VanillaTrainer(Trainer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    def compute_loss(
+        self,
+        model: nn.Module,
+        inputs: Dict[str, torch.Tensor],
+        return_outputs: bool = False,
+        num_items_in_batch: Optional[int] = None,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, Any]]:
+        """Compute loss - ensures loss is always returned for eval."""
+        outputs = model(**inputs)
+        loss = outputs.loss if hasattr(outputs, "loss") else outputs["loss"]
+
+        return (loss, outputs) if return_outputs else loss
 
     def training_step(
         self,
