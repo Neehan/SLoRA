@@ -95,13 +95,18 @@ def main():
     if accelerator.is_main_process and config["logging"]["report_to"] == "wandb":
         import wandb
         run_name = config["logging"].get("wandb_run_name", None)
-        wandb.init(
+        run = wandb.init(
             project=config["logging"]["wandb_project"],
             name=run_name,
             id=run_name,
             config=config,
             resume="allow",
         )
+        os.environ["WANDB_RUN_ID"] = run.id
+        os.environ["WANDB_PROJECT"] = config["logging"]["wandb_project"]
+
+        wandb.define_metric("filter_step")
+        wandb.define_metric("filter/*", step_metric="filter_step")
 
     if config["slora"].get("enable", True):
         model = accelerator.prepare(model)

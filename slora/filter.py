@@ -52,13 +52,17 @@ def filter_pass(
     )
     dataloader = accelerator.prepare(dataloader)
 
-    max_steps = config["training"].get("max_steps", -1)
     grad_accum_steps = config["training"]["gradient_accumulation_steps"]
-    max_batches = max_steps * grad_accum_steps if max_steps > 0 else len(dataloader)
+    total_steps = len(dataloader) // grad_accum_steps
+    burn_in = config["slora"]["burn_in"]
+
+    if burn_in >= total_steps:
+        logger.warning(
+            f"burn_in={burn_in} >= total_steps={total_steps}. "
+            f"Gate will never exit burn-in phase! Consider lowering burn_in or using more data."
+        )
 
     for batch_idx, batch in enumerate(dataloader):
-        if batch_idx >= max_batches:
-            break
         with torch.no_grad():
             outputs = model(**batch, output_hidden_states=True)
             hidden_states = outputs.hidden_states[-1]
@@ -79,26 +83,27 @@ def filter_pass(
             optimizer_step = batch_idx // grad_accum_steps
             if optimizer_step % 10 == 0:
                 logger.info(
-                    f"Filter step {optimizer_step}/{max_steps if max_steps > 0 else '?'}, "
+                    f"Filter step {optimizer_step}, "
                     f"acceptance_rate={gate.acceptance_rate():.3f}"
                 )
                 if accelerator.is_main_process:
                     wandb.log(
                         {
+                            "filter_step": optimizer_step,
                             "filter/gate/novelty": novelty,
                             "filter/gate/novelty_avg": novelty_score_ema,
                             "filter/gate/novelty_energy_ema": gate.novelty_ema,
                             "filter/gate/current_novelty_threshold": gate.current_novelty_threshold,
                             "filter/gate/accept": last_accept,
                             "filter/gate/acceptance_rate": gate.acceptance_rate(),
-                        },
-                        step=optimizer_step,
+                        }
                     )
 
     accepted_batch_indices = dataset_filter.get_accepted_indices()
+    total_batches = len(dataloader)
     logger.info(
-        f"Filtering complete: {len(accepted_batch_indices)}/{max_batches} batches accepted "
-        f"({100.0 * len(accepted_batch_indices) / max_batches:.1f}%)"
+        f"Filtering complete: {len(accepted_batch_indices)}/{total_batches} batches accepted "
+        f"({100.0 * len(accepted_batch_indices) / total_batches:.1f}%)"
     )
 
     batch_size = config["training"]["per_device_train_batch_size"]
