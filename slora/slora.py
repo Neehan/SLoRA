@@ -3,6 +3,7 @@ import torch
 from typing import List, Dict, Any
 from slora.gate import HeadGradientGate
 from torch.utils.data import DataLoader
+import wandb
 
 
 def slora_filter(model, dataset, config: Dict[str, Any], accelerator, logger) -> List[int]:
@@ -13,7 +14,7 @@ def slora_filter(model, dataset, config: Dict[str, Any], accelerator, logger) ->
         accepted_sample_indices: list of dataset sample indices that were accepted
     """
     device = accelerator.device
-    model_config = model.config
+    model_config = accelerator.unwrap_model(model).config
 
     gate_params = {
         "d_hidden": model_config.hidden_size,
@@ -35,6 +36,18 @@ def slora_filter(model, dataset, config: Dict[str, Any], accelerator, logger) ->
     gate = HeadGradientGate(**gate_params)
     dataset_filter = DatasetFilter(gate, accelerator)
 
+    novelty_score_ema = 1.0
+    last_accept = 1
+
+    if accelerator.is_main_process:
+        wandb.log({
+            "gate/d_hidden": model_config.hidden_size,
+            "gate/m": gate_params["m"],
+            "gate/k": gate_params["k"],
+            "gate/target_accept_rate": gate_params["target_accept_rate"],
+            "gate/initial_threshold": gate_params["initial_threshold"],
+        })
+
     logger.info("Starting filtering pass...")
     model.eval()
 
@@ -53,13 +66,25 @@ def slora_filter(model, dataset, config: Dict[str, Any], accelerator, logger) ->
             logits = outputs.logits
             labels = batch["labels"]
 
-            dataset_filter.filter_batch(batch_idx, hidden_states, logits, labels)
+            novelty, accept = dataset_filter.filter_batch(batch_idx, hidden_states, logits, labels)
+
+            novelty_score_ema = gate.ema_decay * novelty_score_ema + (1 - gate.ema_decay) * novelty
+            last_accept = int(accept)
 
         if batch_idx % 10 == 0:
             logger.info(
                 f"Filtered {batch_idx}/{len(dataloader)} batches, "
                 f"acceptance_rate={gate.acceptance_rate():.3f}"
             )
+            if accelerator.is_main_process:
+                wandb.log({
+                    "train/gate/novelty": novelty,
+                    "train/gate/novelty_avg": novelty_score_ema,
+                    "train/gate/novelty_energy_ema": gate.novelty_ema,
+                    "train/gate/current_novelty_threshold": gate.current_novelty_threshold,
+                    "train/gate/accept": last_accept,
+                    "train/gate/acceptance_rate": gate.acceptance_rate(),
+                }, step=batch_idx)
 
     accepted_batch_indices = dataset_filter.get_accepted_indices()
     logger.info(
@@ -96,13 +121,14 @@ class DatasetFilter:
         hidden_states: torch.Tensor,
         logits: torch.Tensor,
         labels: torch.Tensor,
-    ) -> bool:
+    ) -> tuple[float, bool]:
         """
         Evaluate batch through gate and record if accepted.
         DDP-safe: syncs z embedding and accept decision across all processes.
 
         Returns:
-            accepted: whether batch was accepted
+            novelty: the novelty score for this batch
+            accept: whether this batch was accepted
         """
         with torch.no_grad():
             z = self.gate.embed(hidden_states, logits, labels)
@@ -131,7 +157,7 @@ class DatasetFilter:
             self.gate.step(self.global_step, accept)
             self.global_step += 1
 
-        return accept
+        return novelty, accept
 
     def get_accepted_indices(self) -> List[int]:
         """Return list of accepted batch indices."""
