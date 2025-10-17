@@ -169,27 +169,27 @@ class SLoRATrainer(Trainer):
 
         count_increment = 1.0 / self.accelerator.num_processes
 
-        # if (
-        #     not self.model_accepts_loss_kwargs or num_items_in_batch is None
-        # ) and self.compute_loss_func is None:
-        #     loss = loss / self.args.gradient_accumulation_steps
+        if (
+            not self.model_accepts_loss_kwargs or num_items_in_batch is None
+        ) and self.compute_loss_func is None:
+            loss = loss / self.args.gradient_accumulation_steps
 
         if self.args.n_gpu > 1:
             loss = loss.mean()
 
+        ret_loss = loss.detach()
+
         if accept:
             num_accepted = self.optimizer.get_num_accepted()
-            scale_factor = num_accepted / (num_accepted + 1)
 
             if self.lora_params is None:
                 self.lora_params = get_lora_parameters(model)
 
             for param in self.lora_params:
                 if param.grad is not None:
-                    param.grad.mul_(scale_factor)
+                    param.grad.mul_(num_accepted / (num_accepted + 1))
 
-            loss = loss / (num_accepted + 1)
-            self.accelerator.backward(loss)
+            self.accelerator.backward(loss * self.args.gradient_accumulation_steps / (num_accepted + 1))
 
             grad_norm = compute_lora_grad_norm(self.lora_params)
             self.gate.update(z, grad_norm, count_increment)
@@ -197,7 +197,6 @@ class SLoRATrainer(Trainer):
             if self.lr_scheduler is not None:
                 self.lr_scheduler.mark_accept()
 
-        ret_loss = loss.detach()
         self.gate.step(self.state.global_step, accept)
 
         return ret_loss
