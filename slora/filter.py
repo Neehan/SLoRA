@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 import wandb
 
 
-def filter_pass(model, dataset, config: Dict[str, Any], accelerator, logger) -> List[int]:
+def filter_pass(model, dataset, config: Dict[str, Any], accelerator, logger, data_collator) -> List[int]:
     """
     Run filtering pass to get accepted sample indices.
 
@@ -46,6 +46,7 @@ def filter_pass(model, dataset, config: Dict[str, Any], accelerator, logger) -> 
         dataset,
         batch_size=config["training"]["per_device_train_batch_size"],
         shuffle=False,
+        collate_fn=data_collator,
     )
     dataloader = accelerator.prepare(dataloader)
 

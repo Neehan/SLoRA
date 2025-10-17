@@ -88,6 +88,10 @@ def main():
     logger.info("Loading and preparing dataset")
     train_dataset, eval_dataset = prepare_data(config, tokenizer, logger)
 
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer, mlm=False, pad_to_multiple_of=8
+    )
+
     if config["slora"].get("enable", True):
         import wandb
         if accelerator.is_main_process:
@@ -99,7 +103,7 @@ def main():
 
         model = accelerator.prepare(model)
         accepted_indices = filter_pass(
-            model, train_dataset, config, accelerator, logger
+            model, train_dataset, config, accelerator, logger, data_collator
         )
         train_dataset = train_dataset.select(accepted_indices)  # type: ignore
         logger.info(f"Filtered train dataset size: {len(train_dataset)}")
@@ -139,10 +143,6 @@ def main():
         report_to=config["logging"]["report_to"],
         run_name=config["logging"].get("wandb_run_name", None),
         ddp_find_unused_parameters=False,
-    )
-
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer, mlm=False, pad_to_multiple_of=8
     )
 
     trainer = Trainer(
