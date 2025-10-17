@@ -53,7 +53,14 @@ def filter_pass(
     dataloader = accelerator.prepare(dataloader)
 
     grad_accum_steps = config["training"]["gradient_accumulation_steps"]
-    total_steps = len(dataloader) // grad_accum_steps
+    max_steps = config["training"].get("max_steps", -1)
+    total_batches = len(dataloader)
+    total_steps = total_batches // grad_accum_steps
+
+    if max_steps > 0 and max_steps < total_steps:
+        total_steps = max_steps
+        total_batches = max_steps * grad_accum_steps
+
     burn_in = config["slora"]["burn_in"]
 
     if burn_in >= total_steps:
@@ -63,6 +70,8 @@ def filter_pass(
         )
 
     for batch_idx, batch in enumerate(dataloader):
+        if batch_idx >= total_batches:
+            break
         with torch.no_grad():
             outputs = model(**batch, output_hidden_states=True)
             hidden_states = outputs.hidden_states[-1]
