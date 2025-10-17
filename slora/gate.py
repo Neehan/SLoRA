@@ -201,7 +201,7 @@ class HeadGradientGate:
         )
 
         z_tokens = self.sketch.sketch_batch(h_flat, idx_filtered, sel_errors_filtered)
-        z = z_tokens[valid_mask].sum(dim=0)
+        z = z_tokens.sum(dim=0)
 
         return z
 
