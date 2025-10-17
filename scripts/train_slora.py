@@ -73,7 +73,6 @@ def main():
         dtype=torch.bfloat16 if config["training"]["bf16"] else torch.float16,
         **model_kwargs,
     )
-    model.config.use_cache = False
 
     if config["model"].get("load_in_4bit", False):
         model = prepare_model_for_kbit_training(model)
