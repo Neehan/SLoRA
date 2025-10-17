@@ -98,9 +98,7 @@ def main():
         run = wandb.init(
             project=config["logging"]["wandb_project"],
             name=run_name,
-            id=run_name,
             config=config,
-            resume="allow",
         )
         os.environ["WANDB_RUN_ID"] = run.id
         os.environ["WANDB_PROJECT"] = config["logging"]["wandb_project"]
