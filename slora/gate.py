@@ -215,17 +215,25 @@ class HeadGradientGate:
         """
         z_norm = z.norm()
         if torch.isnan(z_norm) or z_norm.item() < 1e-12:
-            return 0.0
-
-        zn = z / z_norm
-
-        W = self.subspace.get_basis()  # (m, r), assumed orthonormal columns
-        if W.numel() == 0 or W.shape[1] == 0:
-            return 1.0  # no basis yet: fully novel
+            novelty_value = 0.0
         else:
-            # Directional novelty: 1 - ||W^T zn||^2
-            coeff = W.T @ zn
-            return max(0.0, 1.0 - float((coeff * coeff).sum()))
+            zn = z / z_norm
+            W = self.subspace.get_basis()  # (m, r), assumed orthonormal columns
+            if W.numel() == 0 or W.shape[1] == 0:
+                novelty_value = 1.0  # no basis yet: fully novel
+            else:
+                # Directional novelty: 1 - ||W^T zn||^2
+                coeff = W.T @ zn
+                novelty_value = max(0.0, 1.0 - float((coeff * coeff).sum()))
+
+        self.novelty_ema = self.ema_decay * self.novelty_ema + (
+            1 - self.ema_decay
+        ) * novelty_value
+
+        if global_step < self.burn_in:
+            self.current_novelty_threshold = self.novelty_ema
+
+        return novelty_value
 
     def accept(self, novelty: float, global_step: int) -> bool:
         """

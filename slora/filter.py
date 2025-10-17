@@ -68,7 +68,9 @@ def filter_pass(
     model.eval()
 
     # Compile forward wrapper for speedup (filter pass only, no gradients)
-    base_model = accelerator.unwrap_model(model)
+    # Extract base model without PEFT adapters (filter only needs pretrained weights)
+    unwrapped_model = accelerator.unwrap_model(model)
+    base_model = unwrapped_model.get_base_model()
     filter_forward = FilterForward(base_model).to(accelerator.device)
     filter_forward.eval()
     filter_forward = torch.compile(
