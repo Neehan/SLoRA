@@ -6,7 +6,9 @@ from torch.utils.data import DataLoader
 import wandb
 
 
-def filter_pass(model, dataset, config: Dict[str, Any], accelerator, logger, data_collator) -> List[int]:
+def filter_pass(
+    model, dataset, config: Dict[str, Any], accelerator, logger, data_collator
+) -> List[int]:
     """
     Run filtering pass to get accepted sample indices.
 
@@ -57,25 +59,35 @@ def filter_pass(model, dataset, config: Dict[str, Any], accelerator, logger, dat
             logits = outputs.logits
             labels = batch["labels"]
 
-            novelty, accept = dataset_filter.filter_batch(batch_idx, hidden_states, logits, labels)
+            novelty, accept = dataset_filter.filter_batch(
+                batch_idx, hidden_states, logits, labels
+            )
 
-            novelty_score_ema = gate.ema_decay * novelty_score_ema + (1 - gate.ema_decay) * novelty
+            novelty_score_ema = (
+                gate.ema_decay * novelty_score_ema + (1 - gate.ema_decay) * novelty
+            )
             last_accept = int(accept)
 
-        if batch_idx % 10 == 0:
-            logger.info(
-                f"Filtered {batch_idx}/{len(dataloader)} batches, "
-                f"acceptance_rate={gate.acceptance_rate():.3f}"
-            )
-            if accelerator.is_main_process:
-                wandb.log({
-                    "train/gate/novelty": novelty,
-                    "train/gate/novelty_avg": novelty_score_ema,
-                    "train/gate/novelty_energy_ema": gate.novelty_ema,
-                    "train/gate/current_novelty_threshold": gate.current_novelty_threshold,
-                    "train/gate/accept": last_accept,
-                    "train/gate/acceptance_rate": gate.acceptance_rate(),
-                }, step=batch_idx)
+        grad_accum_steps = config["training"]["gradient_accumulation_steps"]
+        if batch_idx % grad_accum_steps == 0:
+            optimizer_step = batch_idx // grad_accum_steps
+            if optimizer_step % 10 == 0:
+                logger.info(
+                    f"Filtered {batch_idx}/{len(dataloader)} batches (step {optimizer_step}), "
+                    f"acceptance_rate={gate.acceptance_rate():.3f}"
+                )
+                if accelerator.is_main_process:
+                    wandb.log(
+                        {
+                            "filter/gate/novelty": novelty,
+                            "filter/gate/novelty_avg": novelty_score_ema,
+                            "filter/gate/novelty_energy_ema": gate.novelty_ema,
+                            "filter/gate/current_novelty_threshold": gate.current_novelty_threshold,
+                            "filter/gate/accept": last_accept,
+                            "filter/gate/acceptance_rate": gate.acceptance_rate(),
+                        },
+                        step=optimizer_step,
+                    )
 
     accepted_batch_indices = dataset_filter.get_accepted_indices()
     logger.info(

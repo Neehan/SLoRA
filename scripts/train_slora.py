@@ -92,24 +92,21 @@ def main():
         tokenizer, mlm=False, pad_to_multiple_of=8
     )
 
-    if config["slora"].get("enable", True):
+    if accelerator.is_main_process and config["logging"]["report_to"] == "wandb":
         import wandb
-        if accelerator.is_main_process:
-            wandb.init(
-                project=config["logging"].get("wandb_project", "slora"),
-                name=config["logging"].get("wandb_run_name", None),
-                config=config,
-            )
+        wandb.init(
+            project=config["logging"]["wandb_project"],
+            name=config["logging"].get("wandb_run_name", None),
+            config=config,
+        )
 
+    if config["slora"].get("enable", True):
         model = accelerator.prepare(model)
         accepted_indices = filter_pass(
             model, train_dataset, config, accelerator, logger, data_collator
         )
         train_dataset = train_dataset.select(accepted_indices)  # type: ignore
         logger.info(f"Filtered train dataset size: {len(train_dataset)}")
-
-        if accelerator.is_main_process:
-            wandb.finish()
 
     training_args = TrainingArguments(
         output_dir=config["training"]["output_dir"],
