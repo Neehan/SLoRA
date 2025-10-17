@@ -2,6 +2,7 @@
 base: baseline.yaml
 
 training:
+  max_steps: 1000
   output_dir: ./outputs/quick_gemma3_1b_it
 
 slora:
@@ -15,7 +16,7 @@ slora:
   seed: 0
   reorth_every: 32
   k_topk: 128
-  random: false
+  random: true
   subspace_decay: 0.99
 
 logging:
