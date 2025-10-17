@@ -29,6 +29,11 @@ def load_config(config_path: str) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
+def compute_metrics(eval_pred):
+    loss = eval_pred.metrics["eval_loss"] if "eval_loss" in eval_pred.metrics else None
+    return {"eval/loss": loss} if loss is not None else {}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True)
@@ -94,6 +99,7 @@ def main():
 
     if accelerator.is_main_process and config["logging"]["report_to"] == "wandb":
         import wandb
+
         run_name = config["logging"].get("wandb_run_name", None)
         run = wandb.init(
             project=config["logging"]["wandb_project"],
@@ -146,7 +152,7 @@ def main():
         dataloader_pin_memory=config["training"]["dataloader_pin_memory"],
         remove_unused_columns=config["training"]["remove_unused_columns"],
         report_to=config["logging"]["report_to"],
-        run_name=config["logging"].get("wandb_run_name", None),
+        run_name=config["logging"]["wandb_run_name"],
         ddp_find_unused_parameters=False,
     )
 
@@ -157,6 +163,7 @@ def main():
         eval_dataset=eval_dataset,  # type: ignore
         processing_class=tokenizer,
         data_collator=data_collator,
+        compute_metrics=compute_metrics,
     )
 
     logger.info("Starting training")
