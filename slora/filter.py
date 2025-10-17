@@ -71,6 +71,8 @@ def filter_pass(
     base_model = unwrapped_model.get_base_model()
     filter_forward = FilterForward(base_model).to(accelerator.device)
     filter_forward.eval()
+
+    torch._dynamo.config.suppress_errors = True
     filter_forward = torch.compile(
         filter_forward,
         backend="inductor",
