@@ -73,16 +73,14 @@ def filter_pass(
             f"Gate will never exit burn-in phase! Consider lowering burn_in or using more data."
         )
 
-    past_key_values = None
     with torch.inference_mode():
         for batch_idx, batch in enumerate(dataloader):
             if batch_idx >= total_batches:
                 break
-            outputs = model(**batch, output_hidden_states=True, use_cache=True, past_key_values=past_key_values)
+            outputs = model(**batch, output_hidden_states=True)
             hidden_states = outputs.hidden_states[-1]
             logits = outputs.logits
             labels = batch["labels"]
-            past_key_values = outputs.past_key_values
 
             optimizer_step = batch_idx // grad_accum_steps
             novelty, accept = dataset_filter.filter_batch(
