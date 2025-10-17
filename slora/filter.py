@@ -71,18 +71,12 @@ def filter_pass(
     unwrapped_model = accelerator.unwrap_model(model)
     base_model = unwrapped_model.get_base_model()
 
+    # Compile individual decoder layers instead of full model to avoid transformers wrapper issues
+    for layer in base_model.model.layers:
+        layer.forward = torch.compile(layer.forward, backend="inductor", mode="max-autotune")
+
     filter_forward = FilterForward(base_model).to(accelerator.device)
     filter_forward.eval()
-
-    # Configure dynamo to handle transformers' output collection
-    torch._dynamo.config.capture_scalar_outputs = True
-    torch._dynamo.config.guard_nn_modules = False
-
-    filter_forward = torch.compile(
-        filter_forward,
-        backend="inductor",
-        mode="max-autotune",
-    )
     logger.info("Compiled filter forward pass")
 
     filter_start_time = time.time()
