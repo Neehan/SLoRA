@@ -30,8 +30,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
 
 def compute_metrics(eval_pred):
-    loss = eval_pred.metrics["eval_loss"] if "eval_loss" in eval_pred.metrics else None
-    return {"eval/loss": loss} if loss is not None else {}
+    return {}
 
 
 def main():

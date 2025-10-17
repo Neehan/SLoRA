@@ -111,8 +111,8 @@ def filter_pass(
                                 "filter/gate/current_novelty_threshold": gate.current_novelty_threshold,
                                 "filter/gate/accept": last_accept,
                                 "filter/gate/acceptance_rate": gate.acceptance_rate(),
+                                "filter_step": optimizer_step,
                             },
-                            step=optimizer_step,
                         )
 
     accepted_batch_indices = dataset_filter.get_accepted_indices()
