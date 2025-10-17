@@ -1,29 +1,9 @@
 #!/usr/bin/env python3
 import torch
-import torch.nn as nn
 from typing import List, Dict, Any
 from slora.gate import HeadGradientGate
 from torch.utils.data import DataLoader
 import wandb
-import os
-
-
-class FilterForward(nn.Module):
-    """Compiled wrapper for filter pass forward that returns only tensors."""
-
-    def __init__(self, model):
-        super().__init__()
-        self.model = model
-        self.model.config.use_cache = False
-
-    def forward(self, **inputs):
-        outputs = self.model(
-            **inputs,
-            output_hidden_states=True,
-            use_cache=False,
-            return_dict=True,
-        )
-        return outputs.hidden_states[-1], outputs.logits
 
 
 def filter_pass(
@@ -65,19 +45,7 @@ def filter_pass(
 
     logger.info("Starting filtering pass...")
     model.eval()
-
-    # Extract base model without PEFT adapters (filter only needs pretrained weights)
-    unwrapped_model = accelerator.unwrap_model(model)
-    base_model = unwrapped_model.get_base_model()
-
-    filter_forward = FilterForward(base_model).to(accelerator.device)
-    filter_forward.eval()
-
-    # Compile individual layers - disable cudagraphs to avoid tensor aliasing issues
-    torch._inductor.config.triton.cudagraphs = False
-    for layer in base_model.model.layers:
-        layer.forward = torch.compile(layer.forward, backend="inductor")
-    logger.info("Compiled filter forward pass")
+    model.config.use_cache = False
 
     filter_start_time = time.time()
 
@@ -121,7 +89,14 @@ def filter_pass(
                 if k
                 in ("input_ids", "attention_mask", "position_ids", "token_type_ids")
             }
-            hidden_states, logits = filter_forward(**forward_inputs)
+            outputs = model(
+                **forward_inputs,
+                output_hidden_states=True,
+                use_cache=False,
+                return_dict=True,
+            )
+            hidden_states = outputs.hidden_states[-1]
+            logits = outputs.logits
             labels = batch["labels"]
             forward_time_total += time.time() - forward_start
 
