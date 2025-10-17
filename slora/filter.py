@@ -96,6 +96,7 @@ def filter_pass(
                 optimizer_step = batch_idx // grad_accum_steps
                 logging_steps = gate_config["logging_steps"]
                 if optimizer_step % logging_steps == 0:
+                    elapsed_time = time.time() - filter_start_time
                     logger.info(
                         f"Filter step {optimizer_step}, "
                         f"acceptance_rate={gate.acceptance_rate():.3f}"
@@ -109,6 +110,7 @@ def filter_pass(
                                 "filter/gate/current_novelty_threshold": gate.current_novelty_threshold,
                                 "filter/gate/accept": last_accept,
                                 "filter/gate/acceptance_rate": gate.acceptance_rate(),
+                                "filter/elapsed_time_seconds": elapsed_time,
                                 "filter_step": optimizer_step,
                             },
                         )
@@ -122,14 +124,14 @@ def filter_pass(
         f"({100.0 * len(accepted_batch_indices) / total_batches:.1f}%)"
     )
 
-    if accelerator.is_main_process:
-        wandb.log({"filter/total_time_seconds": filter_time})
+    per_device_batch_size = gate_config["per_device_train_batch_size"]
+    num_processes = accelerator.num_processes
+    samples_per_batch = per_device_batch_size * num_processes
 
-    batch_size = gate_config["per_device_train_batch_size"]
     accepted_sample_indices = []
     for batch_idx in accepted_batch_indices:
-        start_idx = batch_idx * batch_size
-        end_idx = min(start_idx + batch_size, len(dataset))
+        start_idx = batch_idx * samples_per_batch
+        end_idx = min(start_idx + samples_per_batch, len(dataset))
         accepted_sample_indices.extend(range(start_idx, end_idx))
 
     return accepted_sample_indices
