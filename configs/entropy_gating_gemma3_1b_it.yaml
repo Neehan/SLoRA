@@ -1,0 +1,11 @@
+base: baseline.yaml
+
+training:
+  output_dir: ./outputs/entropy_gating_gemma3_1b_it
+
+gating:
+  method: entropy_gating
+  topk_tokens: 0.2
+
+logging:
+  wandb_run_name: entropy_gating_gemma3_1b_it
