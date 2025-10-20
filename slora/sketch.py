@@ -17,13 +17,14 @@ class TensorSketch:
         self.topk_gradients = topk_gradients
         self.device = torch.device(device)
 
+        # Generate on CPU for reproducibility, then move to device
         gen = torch.Generator(device="cpu").manual_seed(seed)
-        self.bucket_h = torch.randint(0, sketch_dim, (d_hidden,), generator=gen, dtype=torch.long, device=self.device)
-        self.sign_h = torch.randint(0, 2, (d_hidden,), generator=gen, dtype=torch.int8, device=self.device).mul_(2).sub_(1)
+        self.bucket_h = torch.randint(0, sketch_dim, (d_hidden,), generator=gen, dtype=torch.long).to(self.device)
+        self.sign_h = torch.randint(0, 2, (d_hidden,), generator=gen, dtype=torch.int8).mul_(2).sub_(1).to(self.device)
 
         gen = torch.Generator(device="cpu").manual_seed(seed + 1)
-        self.bucket_e = torch.randint(0, sketch_dim, (vocab_size,), generator=gen, dtype=torch.long, device=self.device)
-        self.sign_e = torch.randint(0, 2, (vocab_size,), generator=gen, dtype=torch.int8, device=self.device).mul_(2).sub_(1)
+        self.bucket_e = torch.randint(0, sketch_dim, (vocab_size,), generator=gen, dtype=torch.long).to(self.device)
+        self.sign_e = torch.randint(0, 2, (vocab_size,), generator=gen, dtype=torch.int8).mul_(2).sub_(1).to(self.device)
 
     def sketch_batch(self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
