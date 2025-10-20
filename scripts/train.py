@@ -19,20 +19,38 @@ from transformers import (
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from datasets import load_dataset
 
+from slora.trainers.base import TokenGatingTrainer
+from slora.trainers.random_trainer import RandomTokenTrainer
 from slora.trainers.slora_trainer import SLoRATrainer
 from slora.utils.seed import set_seed
 from slora.utils.logging import setup_logging
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
-    """Load YAML config file."""
     with open(config_path) as f:
         config = yaml.safe_load(f)
+
+    if "base" in config:
+        base_path = Path(config_path).parent / config["base"]
+        base_config = load_config(str(base_path))
+
+        def deep_merge(base: Dict, override: Dict) -> Dict:
+            result = base.copy()
+            for key, value in override.items():
+                if key == "base":
+                    continue
+                if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                    result[key] = deep_merge(result[key], value)
+                else:
+                    result[key] = value
+            return result
+
+        config = deep_merge(base_config, config)
+
     return config
 
 
 def prepare_data(config: Dict[str, Any], tokenizer, logger):
-    """Load and prepare dataset."""
     dataset = load_dataset(
         config["data"]["dataset_name"],
         split=config["data"]["train_split"],
@@ -43,7 +61,6 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
     )
 
     def formatting_func(example):
-        """Format example as chat template."""
         try:
             text = tokenizer.apply_chat_template(
                 example["messages"],
@@ -54,22 +71,21 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
         except Exception:
             return {"text": None}
 
-    dataset_orig_size = len(dataset)  # type: ignore
+    dataset_orig_size = len(dataset)
     dataset = dataset.map(formatting_func)
     dataset = dataset.filter(lambda x: x["text"] is not None)
     logger.info(
-        f"Train dataset: kept {len(dataset)}/{dataset_orig_size} examples (skipped {dataset_orig_size - len(dataset)})"  # type: ignore
+        f"Train dataset: kept {len(dataset)}/{dataset_orig_size} examples (skipped {dataset_orig_size - len(dataset)})"
     )
 
-    eval_orig_size = len(eval_dataset)  # type: ignore
+    eval_orig_size = len(eval_dataset)
     eval_dataset = eval_dataset.map(formatting_func)
     eval_dataset = eval_dataset.filter(lambda x: x["text"] is not None)
     logger.info(
-        f"Eval dataset: kept {len(eval_dataset)}/{eval_orig_size} examples (skipped {eval_orig_size - len(eval_dataset)})"  # type: ignore
+        f"Eval dataset: kept {len(eval_dataset)}/{eval_orig_size} examples (skipped {eval_orig_size - len(eval_dataset)})"
     )
 
     def tokenize_func(examples):
-        """Tokenize text."""
         result = tokenizer(
             examples["text"],
             truncation=True,
@@ -103,18 +119,8 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
 
 def main():
     parser = argparse.ArgumentParser(description="Train SLoRA model")
-    parser.add_argument(
-        "--config",
-        type=str,
-        required=True,
-        help="Path to YAML config file",
-    )
-    parser.add_argument(
-        "--local_rank",
-        type=int,
-        default=-1,
-        help="Local rank for distributed training",
-    )
+    parser.add_argument("--config", type=str, required=True, help="Path to YAML config file")
+    parser.add_argument("--local_rank", type=int, default=-1, help="Local rank for distributed training")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -135,13 +141,9 @@ def main():
     if config["model"].get("load_in_4bit", False):
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=getattr(
-                torch, config["model"].get("bnb_4bit_compute_dtype", "bfloat16")
-            ),
+            bnb_4bit_compute_dtype=getattr(torch, config["model"].get("bnb_4bit_compute_dtype", "bfloat16")),
             bnb_4bit_quant_type=config["model"].get("bnb_4bit_quant_type", "nf4"),
-            bnb_4bit_use_double_quant=config["model"].get(
-                "bnb_4bit_use_double_quant", True
-            ),
+            bnb_4bit_use_double_quant=config["model"].get("bnb_4bit_use_double_quant", True),
         )
         model_kwargs["quantization_config"] = bnb_config
         model_kwargs["device_map"] = "auto"
@@ -155,7 +157,7 @@ def main():
     if config["model"].get("load_in_4bit", False):
         model = prepare_model_for_kbit_training(model)
 
-    lora_config = LoraConfig(  # type: ignore
+    lora_config = LoraConfig(
         r=config["lora"]["r"],
         lora_alpha=config["lora"]["lora_alpha"],
         lora_dropout=config["lora"]["lora_dropout"],
@@ -204,38 +206,49 @@ def main():
         ddp_find_unused_parameters=False,
     )
 
-    enable_gate = config["slora"].get("enable", True)
-    gate_config = None
-    if enable_gate:
-        gate_config = {
-            "m": config["slora"]["m"],
-            "k": config["slora"]["k"],
-            "target_accept_rate": config["slora"]["target_accept_rate"],
-            "initial_threshold": config["slora"]["initial_threshold"],
-            "controller_lr": config["slora"]["controller_lr"],
-            "burn_in": config["slora"]["burn_in"],
-            "seed": config["slora"]["seed"],
-            "reorth_every": config["slora"]["reorth_every"],
-            "k_topk": config["slora"]["k_topk"],
-            "random": config["slora"]["random"],
-            "subspace_decay": config["slora"]["subspace_decay"],
-        }
+    data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False, pad_to_multiple_of=8)
 
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer, mlm=False, pad_to_multiple_of=8
-    )
+    method = config["gating"]["method"]
+    padding_label = config["training"]["padding_label"]
 
-    trainer = SLoRATrainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        processing_class=tokenizer,
-        data_collator=data_collator,
-        gate_config=gate_config,
-    )
+    if method == "baseline":
+        trainer = TokenGatingTrainer(
+            padding_label=padding_label,
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            processing_class=tokenizer,
+            data_collator=data_collator,
+        )
+    elif method == "random":
+        trainer = RandomTokenTrainer(
+            topk_tokens=config["gating"]["topk_tokens"],
+            padding_label=padding_label,
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            processing_class=tokenizer,
+            data_collator=data_collator,
+        )
+    elif method == "slora":
+        trainer = SLoRATrainer(
+            topk_tokens=config["gating"]["topk_tokens"],
+            sketch_dim=config["gating"]["sketch_dim"],
+            topk_gradients=config["gating"]["topk_gradients"],
+            padding_label=padding_label,
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            processing_class=tokenizer,
+            data_collator=data_collator,
+        )
+    else:
+        raise ValueError(f"Unknown gating method: {method}")
 
-    logger.info("Starting training")
+    logger.info(f"Starting training with method: {method}")
     trainer.train()
 
     logger.info("Saving final model")

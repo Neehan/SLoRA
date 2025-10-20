@@ -1,243 +1,59 @@
 import torch
-from transformers import Trainer
-from typing import Optional, Dict, Any
-from slora.gate import HeadGradientGate
-from slora.optimizers import GatedOptimizer, GatedLRScheduler
-import json
-from pathlib import Path
+from slora.trainers.base import TokenGatingTrainer
+from slora.sketch import TensorSketch
 
 
-def get_lora_parameters(model: torch.nn.Module) -> list[torch.nn.Parameter]:
-    """Get list of LoRA parameters (cached by caller)."""
-    return [p for n, p in model.named_parameters() if "lora_A" in n or "lora_B" in n]
-
-
-def compute_lora_grad_norm(lora_params: list[torch.nn.Parameter]) -> float:
-    """Compute L2 norm of LoRA gradients."""
-    total_norm = 0.0
-    for param in lora_params:
-        if param.grad is not None:
-            total_norm += param.grad.data.norm(2).item() ** 2
-    return total_norm**0.5
-
-
-class SLoRATrainer(Trainer):
+class SLoRATrainer(TokenGatingTrainer):
     """
-    HuggingFace Trainer with head-gradient proxy gating.
+    Token-level gating using tensor sketch of head gradients.
 
-    Gates BEFORE backward pass using only forward quantities:
-    - hidden_states (pre-head activations)
-    - logits (classifier outputs)
-    - labels (target tokens)
-
-    Skips backward pass entirely on redundant batches.
+    Sketches each token's h ⊗ e (head gradient approximation), then selects
+    top-k% tokens by sketch norm for backpropagation.
     """
 
     def __init__(
         self,
-        gate_config: Optional[Dict[str, Any]],
+        topk_tokens: float,
+        sketch_dim: int,
+        topk_gradients: int,
+        padding_label: int,
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
-        self.gate: Optional[HeadGradientGate] = None
-        self.gate_config = gate_config
+        super().__init__(padding_label, *args, **kwargs)
+        self.topk_tokens = topk_tokens
 
-        self.last_novelty = 0.0
-        self.novelty_score_ema = 1.0  # EMA of novelty scores (ratio), not raw energy
-        self.last_accept = 1
-        self.lora_params: Optional[list[torch.nn.Parameter]] = None
-        self.num_accepted_in_window: Optional[int] = None
-
-    def create_optimizer_and_scheduler(self, num_training_steps: int) -> None:
-        """Wrap optimizer and scheduler with gating logic."""
-        super().create_optimizer_and_scheduler(num_training_steps)
-        if self.gate_config is not None:
-            self.optimizer = GatedOptimizer(self.optimizer)  # type: ignore
-            if self.lr_scheduler is not None:
-                self.lr_scheduler = GatedLRScheduler(self.lr_scheduler)  # type: ignore
-
-    def _initialize_gate(self) -> None:
-        """Initialize gate after model is set up."""
-        if self.gate is not None or self.gate_config is None:
-            return
-
-        device = next(self.model.parameters()).device  # type: ignore
-        config = self.model.config  # type: ignore
-
-        gate_params = {
-            "d_hidden": config.hidden_size,  # type: ignore
-            "vocab_size": config.vocab_size,  # type: ignore
-            "m": self.gate_config["m"],
-            "k": self.gate_config["k"],
-            "target_accept_rate": self.gate_config["target_accept_rate"],
-            "initial_threshold": self.gate_config["initial_threshold"],
-            "controller_lr": self.gate_config["controller_lr"],
-            "burn_in": self.gate_config["burn_in"],
-            "seed": self.gate_config["seed"],
-            "device": str(device),
-            "reorth_every": self.gate_config["reorth_every"],
-            "k_topk": self.gate_config["k_topk"],
-            "random": self.gate_config["random"],
-            "subspace_decay": self.gate_config["subspace_decay"],
-        }
-
-        self.gate = HeadGradientGate(**gate_params)
-
-        self.log(  # type: ignore
-            {
-                "gate/d_hidden": config.hidden_size,  # type: ignore
-                "gate/m": gate_params["m"],
-                "gate/k": gate_params["k"],
-                "gate/target_accept_rate": gate_params["target_accept_rate"],
-                "gate/initial_threshold": gate_params["initial_threshold"],
-                "gate/controller_lr": gate_params["controller_lr"],
-                "gate/burn_in": gate_params["burn_in"],
-            }
+        # Initialize sketcher
+        device = next(self.model.parameters()).device
+        config = self.model.config
+        self.sketcher = TensorSketch(
+            d_hidden=config.hidden_size,
+            vocab_size=config.vocab_size,
+            sketch_dim=sketch_dim,
+            topk_gradients=topk_gradients,
+            seed=self.args.seed,
+            device=str(device),
         )
 
-    def training_step(
-        self,
-        model: torch.nn.Module,
-        inputs: Dict[str, torch.Tensor],
-        num_items_in_batch: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+    def compute_token_mask(self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
-        Override training step to gate before backward.
+        Select tokens by gradient magnitude approximation.
 
-        WARNING: This carefully reproduces the base Trainer's training_step behavior
-        with gating logic inserted. Any changes must maintain equivalence to base trainer
-        when gate is disabled. Key invariants:
-        - Loss normalization by gradient_accumulation_steps (line 139)
-        - Multi-GPU loss averaging for logging (line 141-142)
-        - Proper detachment of returned loss (line 157)
+        Sketch each token's h ⊗ e, use ||sketch|| as proxy for gradient magnitude,
+        then select top-k% tokens.
         """
-        if self.gate_config is not None and self.gate is None:
-            self._initialize_gate()
+        # Sketch each token's h ⊗ e (head gradient approximation)
+        sketches = self.sketcher.sketch_batch(hiddens, logits, labels)
 
-        if self.gate is None:
-            return super().training_step(model, inputs, num_items_in_batch)
+        # Score = ||sketch|| approximates gradient magnitude
+        scores = sketches.norm(dim=1)
 
-        assert isinstance(self.optimizer, GatedOptimizer)
-        assert self.lr_scheduler is None or isinstance(
-            self.lr_scheduler, GatedLRScheduler
-        )
+        # Select top-k% tokens by score - more efficient than creating zeros + indexing
+        k = max(1, int(self.topk_tokens * scores.size(0)))
+        topk_indices = scores.topk(k).indices
 
-        model.train()
-        inputs = self._prepare_inputs(inputs)
-        labels = inputs["labels"]
-        inputs["output_hidden_states"] = True  # type: ignore
+        # Efficient scatter: use index comparison instead of zeros + assignment
+        mask = torch.zeros(scores.size(0), dtype=torch.bool, device=logits.device)
+        mask.scatter_(0, topk_indices, True)
 
-        with self.compute_loss_context_manager():
-            loss, outputs = self.compute_loss(
-                model,
-                inputs,
-                return_outputs=True,
-                num_items_in_batch=num_items_in_batch,
-            )
-            hidden_states = outputs.hidden_states[-1]  # type: ignore
-            logits = outputs.logits  # type: ignore
-
-        del inputs
-
-        with torch.no_grad():
-            z = self.gate.embed(hidden_states, logits, labels)
-
-            # sum across all gpus to get the direction of overall z
-            if self.accelerator.num_processes > 1:
-                torch.distributed.all_reduce(z, op=torch.distributed.ReduceOp.SUM)
-
-            novelty = self.gate.novelty(z, self.state.global_step)
-            accept = self.gate.accept(novelty, global_step=self.state.global_step)
-
-            if self.accelerator.num_processes > 1:
-                accept_tensor = torch.tensor(
-                    [int(accept)], device=self.accelerator.device
-                )
-                torch.distributed.all_reduce(
-                    accept_tensor, op=torch.distributed.ReduceOp.MIN
-                )
-                accept = bool(accept_tensor.item())
-
-        self.last_novelty = novelty
-        # Update novelty score EMA (use same decay as gate)
-        if self.gate is not None:
-            decay = self.gate.ema_decay
-            self.novelty_score_ema = (
-                decay * self.novelty_score_ema + (1 - decay) * novelty
-            )
-        self.last_accept = int(accept)
-
-        count_increment = 1.0 / self.accelerator.num_processes
-
-        if (
-            not self.model_accepts_loss_kwargs or num_items_in_batch is None
-        ) and self.compute_loss_func is None:
-            loss = loss / self.args.gradient_accumulation_steps
-
-        if self.args.n_gpu > 1:
-            loss = loss.mean()
-
-        ret_loss = loss.detach()
-
-        num_accepted = self.optimizer.get_num_accepted()
-        self.num_accepted_in_window = int(num_accepted)
-
-        if accept:
-
-            if self.lora_params is None:
-                self.lora_params = get_lora_parameters(model)
-
-            for param in self.lora_params:
-                if param.grad is not None:
-                    param.grad.mul_(num_accepted / (num_accepted + 1))
-
-            self.accelerator.backward(
-                loss * self.args.gradient_accumulation_steps / (num_accepted + 1)
-            )
-
-            grad_norm = compute_lora_grad_norm(self.lora_params)
-            self.gate.update(z, grad_norm, count_increment)
-            self.optimizer.mark_accept()
-            if self.lr_scheduler is not None:
-                self.lr_scheduler.mark_accept()
-
-        self.gate.step(self.state.global_step, accept)
-
-        return ret_loss
-
-    def log(self, logs: Dict[str, float], start_time: Optional[float] = None) -> None:
-        """Add gate statistics to logs."""
-        if self.gate is not None:
-            logs["gate/novelty"] = self.last_novelty
-            logs["gate/novelty_avg"] = self.novelty_score_ema
-            logs["gate/novelty_energy_ema"] = self.gate.novelty_ema
-            logs["gate/current_novelty_threshold"] = self.gate.current_novelty_threshold
-            logs["gate/accept"] = self.last_accept
-            logs["gate/acceptance_rate"] = self.gate.acceptance_rate()
-            if self.num_accepted_in_window is not None:
-                logs["gate/num_accepted_in_window"] = float(self.num_accepted_in_window)
-        super().log(logs, start_time)
-
-    def _save_checkpoint(self, model, trial, metrics=None):
-        """Save gate metrics in checkpoint."""
-        checkpoint_folder = super()._save_checkpoint(model, trial)
-
-        if self.gate is not None and checkpoint_folder is not None:
-            gate_metrics = {
-                "acceptance_rate": self.gate.acceptance_rate(),
-                "accepted_steps": self.gate.accepted_count,
-                "total_steps": self.state.global_step,
-                "rejected_steps": self.state.global_step - self.gate.accepted_count,
-                "last_novelty": self.last_novelty,
-                "novelty_score_avg": self.novelty_score_ema,
-                "novelty_energy_ema": self.gate.novelty_ema,
-                "last_accept": self.last_accept,
-                "num_accepted_in_window": self.num_accepted_in_window,
-            }
-
-            gate_file = Path(checkpoint_folder) / "gate_metrics.json"
-            with open(gate_file, "w") as f:
-                json.dump(gate_metrics, f, indent=2)
-
-        return checkpoint_folder
+        return mask

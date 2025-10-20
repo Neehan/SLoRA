@@ -1,7 +1,5 @@
-# Full experiment config: Gemma-3-12B on 400k Tülu-3
-
 model:
-  name: google/gemma-3-12b-it # Using gemma-3-12b-it as placeholder
+  name: google/gemma-3-12b-it
   use_flash_attention_2: false
   load_in_4bit: true
   bnb_4bit_compute_dtype: bfloat16
@@ -32,6 +30,7 @@ training:
   dataloader_num_workers: 4
   dataloader_pin_memory: true
   remove_unused_columns: false
+  padding_label: -100
 
 lora:
   r: 8
@@ -48,17 +47,11 @@ lora:
   bias: none
   task_type: CAUSAL_LM
 
-slora:
-  enable: true
-  m: 512
-  k: 64
-  target_accept_rate: 0.40
-  initial_threshold: 0.05
-  controller_lr: 0.01
-  burn_in: 3000
-  seed: 0
-  reorth_every: 128
-  k_topk: 64
+gating:
+  method: slora
+  topk_tokens: 0.4
+  sketch_dim: 512
+  topk_gradients: 64
 
 data:
   dataset_name: allenai/tulu-3-sft-mixture

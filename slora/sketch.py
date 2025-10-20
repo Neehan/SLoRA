@@ -3,103 +3,71 @@ import torch
 
 class TensorSketch:
     """
-    TensorSketch for outer products via FFT-based convolution.
+    Sketch h ⊗ e for tokens via FFT-based convolution.
 
-    Given vectors a ∈ R^d1 and b ∈ R^d2, computes sketch(a ⊗ b) ∈ R^m without
-    materializing the d1×d2 outer product:
-    1. CountSketch both: sketch(a), sketch(b) ∈ R^m
-    2. Convolve via FFT: sketch(a ⊗ b) = IFFT(FFT(sketch(a)) ⊙ FFT(sketch(b)))
+    Given h ∈ R^d_hidden and e ∈ R^vocab_size, computes sketch(h ⊗ e) ∈ R^sketch_dim
+    without materializing the full outer product.
 
-    Cost: O(d1 + d2 + m log m) vs O(d1 × d2) for explicit outer product.
+    Uses sparse top-k logits: only sketch e[top_k] instead of full vocab.
+    Cost: O(d_hidden + topk_gradients + sketch_dim log sketch_dim) vs O(d_hidden × vocab_size).
     """
 
-    def __init__(self, d1: int, d2: int, m: int, seed: int, device: torch.device):
-        self.m = m
-        self.device = device
-        self.bucket_1, self.sign_1 = self._init_hash_params(d1, seed)
-        self.bucket_2, self.sign_2 = self._init_hash_params(d2, seed + 1)
+    def __init__(self, d_hidden: int, vocab_size: int, sketch_dim: int, topk_gradients: int, seed: int, device: str):
+        self.sketch_dim = sketch_dim
+        self.topk_gradients = topk_gradients
+        self.device = torch.device(device)
 
-    def _init_hash_params(
-        self, dim: int, seed: int
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        gen = torch.Generator(device="cpu").manual_seed(seed)
+        self.bucket_h = torch.randint(0, sketch_dim, (d_hidden,), generator=gen, dtype=torch.long, device=self.device)
+        self.sign_h = torch.randint(0, 2, (d_hidden,), generator=gen, dtype=torch.int8, device=self.device).mul_(2).sub_(1)
+
+        gen = torch.Generator(device="cpu").manual_seed(seed + 1)
+        self.bucket_e = torch.randint(0, sketch_dim, (vocab_size,), generator=gen, dtype=torch.long, device=self.device)
+        self.sign_e = torch.randint(0, 2, (vocab_size,), generator=gen, dtype=torch.int8, device=self.device).mul_(2).sub_(1)
+
+    def sketch_batch(self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
-        Sample (or broadcast) CountSketch hash buckets/signs so every process
-        shares the exact same mappings when running under DDP.
-        """
-        dist_enabled = (
-            torch.distributed.is_available() and torch.distributed.is_initialized()
-        )
-        rank = torch.distributed.get_rank() if dist_enabled else 0
-
-        if not dist_enabled or rank == 0:
-            generator = torch.Generator(device="cpu").manual_seed(seed)
-            bucket = torch.randint(
-                low=0, high=self.m, size=(dim,), generator=generator, dtype=torch.long
-            )
-            sign = (
-                torch.randint(
-                    0, 2, (dim,), generator=generator, dtype=torch.int8
-                ).mul_(2)
-                .sub_(1)
-                .to(torch.int8)
-            )
-        else:
-            bucket = torch.empty(dim, dtype=torch.long)
-            sign = torch.empty(dim, dtype=torch.int8)
-
-        bucket = bucket.to(self.device)
-        sign = sign.to(self.device)
-
-        if dist_enabled:
-            torch.distributed.broadcast(bucket, src=0)
-            torch.distributed.broadcast(sign, src=0)
-
-        return bucket, sign
-
-    def sketch_batch(
-        self,
-        dense_vecs: torch.Tensor,
-        sparse_indices: torch.Tensor,
-        sparse_values: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Batch sketch h_i ⊗ e_i for all tokens, where e_i is sparse.
+        Sketch h_i ⊗ e_i for each token using sparse top-k logits.
 
         Args:
-            dense_vecs: (N, d1) - dense vectors (e.g., hidden states)
-            sparse_indices: (N, k) - indices of non-zero entries in sparse vectors
-            sparse_values: (N, k) - values at those indices
+            hiddens: [N, d_hidden] - pre-head activations
+            logits: [N, vocab_size] - classifier outputs
+            labels: [N] - target tokens
 
         Returns:
-            z: (N, m) - sketches for each token
+            [N, sketch_dim] - sketches approximating head gradient h ⊗ e per token
         """
-        N = dense_vecs.shape[0]
+        N = hiddens.shape[0]
 
-        s_h = torch.zeros(N, self.m, dtype=torch.float32, device=self.device)
-        s_h.index_add_(
-            1, self.bucket_1, self.sign_1.float().unsqueeze(0) * dense_vecs.float()
-        )
+        # Get top-k logits to approximate sparse error vector
+        topk_values, topk_indices = logits.topk(self.topk_gradients, dim=1)
 
-        s_e = torch.zeros(N, self.m, dtype=torch.float32, device=self.device)
-        sel_signs = self.sign_2[sparse_indices]
-        sel_buckets = self.bucket_2[sparse_indices]
+        # Compute sparse errors directly: e[top_k] = logits[top_k] - one_hot(label)[top_k]
+        # Avoid clone() by building errors in-place
+        label_mask = (topk_indices == labels.unsqueeze(1))
+        errors_sparse = topk_values - label_mask.float()
 
-        weighted = (sel_signs.float() * sparse_values).reshape(-1)
+        # CountSketch hiddens: map h to R^sketch_dim via random hash
+        s_h = torch.zeros(N, self.sketch_dim, dtype=torch.float32, device=self.device)
+        s_h.index_add_(1, self.bucket_h, self.sign_h.float().unsqueeze(0) * hiddens.float())
+
+        # CountSketch sparse errors: map e[top_k] to R^sketch_dim via random hash
+        s_e = torch.zeros(N, self.sketch_dim, dtype=torch.float32, device=self.device)
+        sel_signs = self.sign_e[topk_indices]
+        sel_buckets = self.bucket_e[topk_indices]
+
+        weighted = (sel_signs.float() * errors_sparse).reshape(-1)
         buckets_flat = sel_buckets.reshape(-1)
-        batch_idx = (
-            torch.arange(N, device=self.device)
-            .unsqueeze(1)
-            .expand(-1, sparse_indices.size(1))
-            .reshape(-1)
-        )
+        batch_idx = torch.arange(N, device=self.device).unsqueeze(1).expand(-1, self.topk_gradients).reshape(-1)
         s_e.index_put_((batch_idx, buckets_flat), weighted, accumulate=True)
 
+        # Convolve via FFT: sketch(h ⊗ e) = IFFT(FFT(sketch(h)) * FFT(sketch(e)))
         fft_h = torch.fft.fft(s_h, dim=1)
         fft_e = torch.fft.fft(s_e, dim=1)
-        z_batch = torch.fft.ifft(fft_h * fft_e, dim=1).real
+        z = torch.fft.ifft(fft_h * fft_e, dim=1).real
 
-        # Scale by 1/√m to preserve inner products: E[⟨sketch(a⊗b), sketch(a'⊗b')⟩] = ⟨a,a'⟩⟨b,b'⟩
-        # Without this, FFT convolution inflates norms by √m and inner products by m
-        z_batch /= self.m ** 0.5
+        # Scale by 1/√sketch_dim to preserve inner products: E[⟨sketch(a⊗b), sketch(a'⊗b')⟩] = ⟨a,a'⟩⟨b,b'⟩
+        # Without this, FFT convolution inflates norms by √sketch_dim and inner products by sketch_dim
+        z /= self.sketch_dim ** 0.5
 
-        return z_batch
+        return z
