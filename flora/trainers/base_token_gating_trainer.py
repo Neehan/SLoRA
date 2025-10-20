@@ -15,6 +15,7 @@ class BaseTokenGatingTrainer(Trainer):
     def __init__(self, padding_label: int, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.padding_label = padding_label
+        self.model_accepts_loss_kwargs = False
 
     def compute_token_mask(self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
@@ -144,7 +145,7 @@ class BaseTokenGatingTrainer(Trainer):
             else:
                 loss_sum = zero_loss
 
-            denom = selected_count
+            denom = valid_count
 
         loss = loss_sum / max(denom, 1.0)
 
