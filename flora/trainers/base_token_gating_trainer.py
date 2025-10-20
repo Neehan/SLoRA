@@ -16,6 +16,7 @@ class BaseTokenGatingTrainer(Trainer):
         super().__init__(*args, **kwargs)
         self.padding_label = padding_label
         self.model_accepts_loss_kwargs = False
+        self._debug_step = 0
 
     def compute_token_mask(self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
@@ -57,6 +58,16 @@ class BaseTokenGatingTrainer(Trainer):
         labels = inputs["labels"]
         attention_mask = inputs.get("attention_mask")
 
+        if self._debug_step < 2:
+            print("\n" + "="*80)
+            print(f"BASE TOKEN GATING TRAINER - Step {self._debug_step}")
+            print("="*80)
+            print(f"Model training: {self.model.training}")
+            print(f"Input shape: {inputs['input_ids'].shape}")
+            print(f"Labels shape (original): {labels.shape}")
+            print(f"Labels[0,:10]: {labels[0, :10].tolist()}")
+            print(f"Padding count: {(labels == -100).sum().item()}")
+
         model_inputs = dict(inputs)
         model_inputs.pop("labels", None)
 
@@ -79,12 +90,20 @@ class BaseTokenGatingTrainer(Trainer):
         hiddens = hidden_states[-1]
         logits = outputs.logits
 
+        if self._debug_step < 2:
+            print(f"Logits shape: {logits.shape}")
+            print(f"Logits dtype: {logits.dtype}")
+
         # Align with next-token prediction: pad labels then shift (matching HF's ForCausalLMLoss)
         # Don't trim logits or hiddens - keep full sequence length
         import torch.nn.functional as F_pad
         labels = F_pad.pad(labels, (0, 1), value=self.padding_label)
         labels = labels[:, 1:].contiguous()
         # Note: attention_mask length matches original, labels now match too
+
+        if self._debug_step < 2:
+            print(f"After pad+shift labels: {labels.shape}")
+            print(f"Shift_labels[0,:10]: {labels[0, :10].tolist()}")
 
         hiddens_flat = hiddens.view(-1, hiddens.size(-1))
         logits_flat = logits.view(-1, logits.size(-1))
@@ -101,6 +120,13 @@ class BaseTokenGatingTrainer(Trainer):
         valid_labels = labels_flat[valid_mask]
 
         valid_count = valid_logits.size(0)
+
+        if self._debug_step < 2:
+            print(f"Logits flat: {logits_flat.shape}")
+            print(f"Labels flat: {labels_flat.shape}")
+            print(f"Valid (non -100): {valid_count}")
+            print(f"Valid logits: {valid_logits.shape}")
+
         zero_loss = logits_flat.sum() * 0.0
         loss_sum = zero_loss
         denom = zero_loss.new_tensor(0.0)
@@ -152,6 +178,11 @@ class BaseTokenGatingTrainer(Trainer):
             denom = valid_count
 
         loss = loss_sum / max(denom, 1.0)
+
+        if self._debug_step < 2:
+            print(f"Loss (sum/count): {loss.item():.10f}")
+            print(f"First 3 logits[0]: {valid_logits[0, :3].tolist() if valid_count > 0 else []}")
+            self._debug_step += 1
 
         if (
             self.args.average_tokens_across_devices
