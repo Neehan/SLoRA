@@ -93,6 +93,7 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
         result = tokenizer(
             examples["text"],
             truncation=True,
+            padding="max_length",
             max_length=config["data"]["max_seq_length"],
         )
         result["labels"] = result["input_ids"].copy()
