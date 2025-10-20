@@ -23,10 +23,4 @@ class EntropyGatingTrainer(BaseTokenGatingTrainer):
         topk_probs = F.softmax(topk_logits, dim=-1)
         entropy = -(topk_probs * torch.log(topk_probs + 1e-10)).sum(dim=-1)
 
-        sampling_probs = entropy / entropy.sum()
-        indices = torch.multinomial(sampling_probs, k, replacement=False)
-        mask = torch.zeros(N, dtype=torch.bool, device=logits.device)
-        mask[indices] = True
-
-        # importance_weights = 1.0 / (sampling_probs * N)
-        return mask  # , importance_weights
+        return self.bernoulli_sample(entropy, k)

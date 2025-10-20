@@ -47,14 +47,5 @@ class FLoRATrainer(BaseTokenGatingTrainer):
         sketches = self.sketcher.sketch_batch(hiddens, logits, labels)
         scores = sketches.norm(dim=1)
 
-        N = scores.size(0)
-        k = max(1, int(self.topk_tokens * N))
-
-        sampling_probs = scores / scores.sum()
-        indices = torch.multinomial(sampling_probs, k, replacement=False)
-
-        mask = torch.zeros(N, dtype=torch.bool, device=logits.device)
-        mask[indices] = True
-
-        importance_weights = 1.0 / (sampling_probs * N)
-        return mask, importance_weights
+        k = max(1, int(self.topk_tokens * scores.size(0)))
+        return self.bernoulli_sample(scores, k)

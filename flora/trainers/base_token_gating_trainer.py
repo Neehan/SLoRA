@@ -17,6 +17,29 @@ class BaseTokenGatingTrainer(Trainer):
         self.padding_label = padding_label
         self.model_accepts_loss_kwargs = False
 
+    @staticmethod
+    def bernoulli_sample(scores: torch.Tensor, k: int):
+        """
+        Bernoulli sampling with importance weights (Horvitz-Thompson estimator).
+
+        Args:
+            scores: [N] non-negative scores
+            k: expected number of tokens to select
+
+        Returns:
+            mask: [N] boolean mask
+            importance_weights: [N] weights for unbiased estimation
+        """
+        N = scores.size(0)
+        p = scores / scores.sum()
+        q = torch.clamp(p * (k / N), max=1.0)
+
+        u = torch.rand_like(q)
+        mask = u < q
+
+        importance_weights = 1.0 / (N * q)
+        return mask, importance_weights
+
     def compute_token_mask(
         self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor
     ):
@@ -94,7 +117,7 @@ class BaseTokenGatingTrainer(Trainer):
         zero_loss = logits_flat.sum() * 0.0
 
         if valid_count == 0:
-            return zero_loss, zero_loss.new_tensor(0.0)
+            return zero_loss, zero_loss.new_tensor(1.0)
 
         with torch.no_grad():
             mask_result = self.compute_token_mask(valid_hiddens, valid_logits, valid_labels)
@@ -112,7 +135,7 @@ class BaseTokenGatingTrainer(Trainer):
         selected_count = selected_logits.size(0)
 
         if selected_count == 0:
-            return zero_loss, valid_count
+            return zero_loss, 1.0
 
         label_smoothing = getattr(self.args, "label_smoothing_factor", 0.0)
         per_token_loss = F.cross_entropy(
@@ -125,10 +148,12 @@ class BaseTokenGatingTrainer(Trainer):
         if importance_weights is not None:
             selected_weights = importance_weights[token_mask]
             loss_sum = (per_token_loss * selected_weights).sum()
+            denom = 1.0
         else:
             loss_sum = per_token_loss.sum()
+            denom = selected_count
 
-        return loss_sum, selected_count
+        return loss_sum, denom
 
     def compute_loss(
         self,

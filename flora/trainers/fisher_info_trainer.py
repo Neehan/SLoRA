@@ -24,11 +24,4 @@ class FisherInfoTrainer(BaseTokenGatingTrainer):
         target_probs = torch.exp(target_logits - log_sum_exp)
         fisher = target_probs * (1 - target_probs)
 
-        sampling_probs = fisher / fisher.sum()
-        indices = torch.multinomial(sampling_probs, k, replacement=False)
-
-        mask = torch.zeros(N, dtype=torch.bool, device=logits.device)
-        mask[indices] = True
-
-        importance_weights = 1.0 / (sampling_probs * N)
-        return mask, importance_weights
+        return self.bernoulli_sample(fisher, k)
