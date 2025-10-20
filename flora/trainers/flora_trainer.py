@@ -37,25 +37,24 @@ class FLoRATrainer(BaseTokenGatingTrainer):
 
     def compute_token_mask(
         self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor
-    ) -> torch.Tensor:
+    ):
         """
-        Select tokens by gradient magnitude approximation.
+        Sample tokens proportionally to gradient magnitude approximation.
 
         Sketch each token's h ⊗ e, use ||sketch|| as proxy for gradient magnitude,
-        then select top-k% tokens.
+        then sample k% tokens with probability proportional to sketch norm.
         """
-        # Sketch each token's h ⊗ e (head gradient approximation)
         sketches = self.sketcher.sketch_batch(hiddens, logits, labels)
-
-        # Score = ||sketch|| approximates gradient magnitude
         scores = sketches.norm(dim=1)
 
-        # Select top-k% tokens by score
-        k = max(1, int(self.topk_tokens * scores.size(0)))
-        topk_indices = scores.topk(k).indices
+        N = scores.size(0)
+        k = max(1, int(self.topk_tokens * N))
 
-        # Efficient scatter: use index comparison instead of zeros + assignment
-        mask = torch.zeros(scores.size(0), dtype=torch.bool, device=logits.device)
-        mask.scatter_(0, topk_indices, True)
+        sampling_probs = scores / scores.sum()
+        indices = torch.multinomial(sampling_probs, k, replacement=False)
 
-        return mask
+        mask = torch.zeros(N, dtype=torch.bool, device=logits.device)
+        mask[indices] = True
+
+        importance_weights = 1.0 / (sampling_probs * N)
+        return mask, importance_weights
