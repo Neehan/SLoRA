@@ -24,4 +24,5 @@ class EntropyGatingTrainer(BaseTokenGatingTrainer):
         mask = torch.zeros(N, dtype=torch.bool, device=logits.device)
         mask[indices] = True
 
-        return mask
+        importance_weights = 1.0 / (sampling_probs * N)
+        return mask, importance_weights

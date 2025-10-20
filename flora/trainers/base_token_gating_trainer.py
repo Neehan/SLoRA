@@ -19,7 +19,7 @@ class BaseTokenGatingTrainer(Trainer):
 
     def compute_token_mask(
         self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor
-    ) -> torch.Tensor:
+    ):
         """
         Return boolean mask [N] indicating which tokens to backprop.
 
@@ -29,7 +29,7 @@ class BaseTokenGatingTrainer(Trainer):
             labels: [N]
 
         Returns:
-            mask: [N] boolean mask
+            mask: [N] boolean mask, or (mask, weights) tuple where weights are importance sampling weights
         """
         return torch.ones(logits.size(0), dtype=torch.bool, device=logits.device)
 
@@ -97,7 +97,12 @@ class BaseTokenGatingTrainer(Trainer):
             return zero_loss, zero_loss.new_tensor(0.0)
 
         with torch.no_grad():
-            token_mask = self.compute_token_mask(valid_hiddens, valid_logits, valid_labels)
+            mask_result = self.compute_token_mask(valid_hiddens, valid_logits, valid_labels)
+            if isinstance(mask_result, tuple):
+                token_mask, importance_weights = mask_result
+            else:
+                token_mask = mask_result
+                importance_weights = None
 
         token_mask = self._validate_token_mask(token_mask, valid_count, valid_logits.device)
         valid_labels = valid_labels.long()
@@ -110,12 +115,19 @@ class BaseTokenGatingTrainer(Trainer):
             return zero_loss, valid_count
 
         label_smoothing = getattr(self.args, "label_smoothing_factor", 0.0)
-        loss_sum = F.cross_entropy(
+        per_token_loss = F.cross_entropy(
             selected_logits.float(),
             selected_labels,
-            reduction="sum",
+            reduction="none",
             label_smoothing=label_smoothing,
         )
+
+        if importance_weights is not None:
+            selected_weights = importance_weights[token_mask]
+            loss_sum = (per_token_loss * selected_weights).sum()
+        else:
+            loss_sum = per_token_loss.sum()
+
         return loss_sum, selected_count
 
     def compute_loss(

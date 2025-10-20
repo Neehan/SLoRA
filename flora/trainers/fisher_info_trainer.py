@@ -6,22 +6,29 @@ from flora.trainers.base_token_gating_trainer import BaseTokenGatingTrainer
 class FisherInfoTrainer(BaseTokenGatingTrainer):
     """Select tokens with highest Fisher information p(1-p)."""
 
-    def __init__(self, topk_tokens: float, padding_label: int, *args, **kwargs):
+    def __init__(self, topk_tokens: float, topk_logits: int, padding_label: int, *args, **kwargs):
         super().__init__(padding_label, *args, **kwargs)
         self.topk_tokens = topk_tokens
+        self.topk_logits = topk_logits
 
     def compute_token_mask(self, hiddens, logits, labels):
         N = logits.size(0)
         k = max(1, int(self.topk_tokens * N))
 
-        probs = F.softmax(logits, dim=-1)
-        target_probs = probs[torch.arange(N), labels.clamp_min(0)]
-        fisher = target_probs * (1 - target_probs)  # Fisher information per token
+        topk_vals, topk_indices = logits.topk(self.topk_logits, dim=-1)
+        target_labels = labels.clamp_min(0).unsqueeze(1)
+        target_logits = logits.gather(1, target_labels).squeeze(1)
 
-        # Normalize and sample
+        combined_logits = torch.cat([topk_vals, target_logits.unsqueeze(1)], dim=1)
+        log_sum_exp = torch.logsumexp(combined_logits, dim=-1)
+        target_probs = torch.exp(target_logits - log_sum_exp)
+        fisher = target_probs * (1 - target_probs)
+
         sampling_probs = fisher / fisher.sum()
         indices = torch.multinomial(sampling_probs, k, replacement=False)
 
         mask = torch.zeros(N, dtype=torch.bool, device=logits.device)
         mask[indices] = True
-        return mask
+
+        importance_weights = 1.0 / (sampling_probs * N)
+        return mask, importance_weights

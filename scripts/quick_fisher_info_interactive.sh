@@ -1,8 +1,8 @@
 #!/bin/bash
-# === FLoRA Quick Test (interactive 2-GPU) ===
+# === Fisher Info Quick Test (interactive 2-GPU) ===
 set -e
 
-echo "=== FLoRA Quick Test (2-GPU interactive) ==="
+echo "=== Fisher Info Quick Test (2-GPU interactive) ==="
 echo "Start time: $(date)"
 
 # Activate your conda/Miniforge env
