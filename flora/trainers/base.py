@@ -85,10 +85,8 @@ class TokenGatingTrainer(Trainer):
         if attention_mask is not None:
             attention_mask = attention_mask[:, 1:].contiguous()
 
-        vocab_size = logits.size(-1)
-
         hiddens_flat = hiddens.view(-1, hiddens.size(-1))
-        logits_flat = logits.view(-1, vocab_size)
+        logits_flat = logits.view(-1, logits.size(-1))
         labels_flat = labels.view(-1)
 
         if attention_mask is not None:
@@ -103,10 +101,10 @@ class TokenGatingTrainer(Trainer):
 
         valid_count = valid_logits.size(0)
         zero_loss = logits_flat.sum() * 0.0
+        loss_sum = zero_loss
+        denom = zero_loss.new_tensor(0.0)
 
-        if valid_count == 0:
-            loss = zero_loss
-        else:
+        if valid_count != 0:
             with torch.no_grad():
                 token_mask = self.compute_token_mask(valid_hiddens, valid_logits, valid_labels)
 
@@ -132,9 +130,7 @@ class TokenGatingTrainer(Trainer):
             selected_labels = valid_labels[token_mask]
             selected_count = selected_logits.size(0)
 
-            if selected_count == 0:
-                loss = zero_loss
-            else:
+            if selected_count > 0:
                 label_smoothing = getattr(self.args, "label_smoothing_factor", 0.0)
                 loss_sum = F.cross_entropy(
                     selected_logits,
@@ -142,19 +138,21 @@ class TokenGatingTrainer(Trainer):
                     reduction="sum",
                     label_smoothing=label_smoothing,
                 )
+            else:
+                loss_sum = zero_loss
 
-                denom = selected_logits.new_tensor(float(valid_count))
+            denom = zero_loss.new_tensor(float(selected_count))
 
-                if (
-                    self.args.average_tokens_across_devices
-                    and torch.distributed.is_available()
-                    and torch.distributed.is_initialized()
-                    and num_items_in_batch is not None
-                ):
-                    torch.distributed.all_reduce(loss_sum, op=torch.distributed.ReduceOp.SUM)
-                    torch.distributed.all_reduce(denom, op=torch.distributed.ReduceOp.SUM)
+        if (
+            self.args.average_tokens_across_devices
+            and torch.distributed.is_available()
+            and torch.distributed.is_initialized()
+            and num_items_in_batch is not None
+        ):
+            torch.distributed.all_reduce(loss_sum, op=torch.distributed.ReduceOp.SUM)
+            torch.distributed.all_reduce(denom, op=torch.distributed.ReduceOp.SUM)
 
-                loss = loss_sum / torch.clamp(denom, min=1.0)
+        loss = loss_sum / torch.clamp(denom, min=1.0)
 
         if return_outputs:
             return loss, outputs
