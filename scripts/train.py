@@ -3,6 +3,7 @@ import os
 import sys
 import argparse
 import yaml
+import copy
 from pathlib import Path
 from typing import Dict, Any
 
@@ -37,7 +38,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
         base_config = load_config(str(base_path))
 
         def deep_merge(base: Dict, override: Dict) -> Dict:
-            result = base.copy()
+            result = copy.deepcopy(base)
             for key, value in override.items():
                 if key == "base":
                     continue
