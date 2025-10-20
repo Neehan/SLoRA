@@ -96,7 +96,7 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
             padding="max_length",
             max_length=config["data"]["max_seq_length"],
         )
-        result["labels"] = result["input_ids"].copy()
+        result["labels"] = [ids.copy() for ids in result["input_ids"]]
         return result
 
     dataset = dataset.map(

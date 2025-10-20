@@ -30,53 +30,111 @@ class TokenGatingTrainer(Trainer):
         """
         return torch.ones(logits.size(0), dtype=torch.bool, device=logits.device)
 
-    def training_step(
+    def compute_loss(
         self,
         model: torch.nn.Module,
         inputs: Dict[str, torch.Tensor],
+        return_outputs: bool = False,
         num_items_in_batch: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        model.train()
-        inputs = self._prepare_inputs(inputs)
+    ):
+        if self.compute_loss_func is not None:
+            return super().compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+                num_items_in_batch=num_items_in_batch,
+            )
 
-        with self.compute_loss_context_manager():
-            # Don't mutate inputs - create new dict with extra key
-            outputs = model(**inputs, output_hidden_states=True)
-            hiddens = outputs.hidden_states[-1]
-            logits = outputs.logits
-            labels = inputs["labels"]
+        if "labels" not in inputs:
+            return super().compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+                num_items_in_batch=num_items_in_batch,
+            )
 
-            vocab_size = logits.size(-1)
+        labels = inputs["labels"]
+        attention_mask = inputs.get("attention_mask")
 
-            hiddens_flat = hiddens.view(-1, hiddens.size(-1))
-            logits_flat = logits.view(-1, vocab_size)
-            labels_flat = labels.view(-1)
+        model_inputs = dict(inputs)
+        model_inputs.pop("labels", None)
 
-            valid_mask = labels_flat != self.padding_label
-            valid_hiddens = hiddens_flat[valid_mask]
-            valid_logits = logits_flat[valid_mask]
-            valid_labels = labels_flat[valid_mask]
+        if self.model_accepts_loss_kwargs:
+            extra_kwargs: Dict[str, torch.Tensor] = {}
+            if num_items_in_batch is not None:
+                extra_kwargs["num_items_in_batch"] = num_items_in_batch
+            model_inputs.update(extra_kwargs)
 
-            if valid_hiddens.size(0) == 0:
-                return torch.tensor(0.0, device=logits.device)
+        model_inputs["return_dict"] = True
+        outputs = model(**model_inputs)
 
-            token_mask = self.compute_token_mask(valid_hiddens, valid_logits, valid_labels)
+        if self.args.past_index >= 0:
+            self._past = outputs[self.args.past_index]
 
-            # Only compute loss for selected tokens to prevent gradient flow through unselected ones
-            selected_logits = valid_logits[token_mask]
-            selected_labels = valid_labels[token_mask]
+        hiddens = outputs.last_hidden_state
+        logits = outputs.logits
 
-            if selected_logits.size(0) == 0:
-                return torch.tensor(0.0, device=logits.device)
+        # Align with next-token prediction: logits/hiddens position t predict labels at t+1
+        hiddens = hiddens[:, :-1, :].contiguous()
+        logits = logits[:, :-1, :].contiguous()
+        labels = labels[:, 1:].contiguous()
+        if attention_mask is not None:
+            attention_mask = attention_mask[:, 1:].contiguous()
 
-            loss = F.cross_entropy(selected_logits, selected_labels)
+        vocab_size = logits.size(-1)
 
-        if (not self.model_accepts_loss_kwargs or num_items_in_batch is None) and self.compute_loss_func is None:
-            loss = loss / self.args.gradient_accumulation_steps
+        hiddens_flat = hiddens.view(-1, hiddens.size(-1))
+        logits_flat = logits.view(-1, vocab_size)
+        labels_flat = labels.view(-1)
 
-        if self.args.n_gpu > 1:
-            loss = loss.mean()
+        if attention_mask is not None:
+            attention_mask_flat = attention_mask.view(-1).bool()
+        else:
+            attention_mask_flat = torch.ones_like(labels_flat, dtype=torch.bool)
 
-        self.accelerator.backward(loss)
+        valid_mask = (labels_flat != self.padding_label) & attention_mask_flat
+        valid_hiddens = hiddens_flat[valid_mask]
+        valid_logits = logits_flat[valid_mask]
+        valid_labels = labels_flat[valid_mask]
 
-        return loss.detach()
+        valid_count = valid_logits.size(0)
+        zero_loss = logits_flat.new_zeros(())
+
+        if valid_count == 0:
+            loss = zero_loss
+        else:
+            with torch.no_grad():
+                token_mask = self.compute_token_mask(valid_hiddens, valid_logits, valid_labels)
+        token_mask = token_mask.to(device=valid_logits.device, dtype=torch.bool)
+        if token_mask.numel() != valid_count:
+            token_mask = token_mask[:valid_count]
+
+        valid_labels = valid_labels.long()
+
+        selected_logits = valid_logits[token_mask]
+        selected_labels = valid_labels[token_mask]
+        selected_count = selected_logits.size(0)
+
+            if selected_count == 0:
+                loss = zero_loss
+            else:
+                label_smoothing = getattr(self.args, "label_smoothing_factor", 0.0)
+                ce_kwargs = {"reduction": "sum"}
+                if label_smoothing:
+                    ce_kwargs["label_smoothing"] = label_smoothing
+
+                loss_sum = F.cross_entropy(selected_logits, selected_labels, **ce_kwargs)
+                loss = loss_sum / valid_count
+
+        if (
+            self.args.average_tokens_across_devices
+            and self.model_accepts_loss_kwargs
+            and num_items_in_batch is not None
+        ):
+            loss = loss * (
+                self.accelerator.num_processes if self.args.n_gpu <= 1 else self.args.n_gpu
+            )
+
+        if return_outputs:
+            return loss, outputs
+        return loss
