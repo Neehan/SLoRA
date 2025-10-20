@@ -235,6 +235,16 @@ def main():
             processing_class=tokenizer,
             data_collator=data_collator,
         )
+    elif method == "baseline_token_gating":
+        trainer = BaseTokenGatingTrainer(
+            padding_label=padding_label,
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            processing_class=tokenizer,
+            data_collator=data_collator,
+        )
     elif method == "random":
         trainer = RandomTokenTrainer(
             topk_tokens=config["gating"]["topk_tokens"],

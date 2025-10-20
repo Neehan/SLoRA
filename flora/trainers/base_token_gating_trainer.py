@@ -144,20 +144,15 @@ class BaseTokenGatingTrainer(Trainer):
             else:
                 loss_sum = zero_loss
 
-            denom = float(selected_count)
+            denom = selected_count
+
+        loss = loss_sum / max(denom, 1.0)
 
         if (
             self.args.average_tokens_across_devices
-            and torch.distributed.is_available()
-            and torch.distributed.is_initialized()
             and num_items_in_batch is not None
         ):
-            denom_tensor = torch.tensor(denom, device=loss_sum.device)
-            torch.distributed.all_reduce(loss_sum, op=torch.distributed.ReduceOp.SUM)
-            torch.distributed.all_reduce(denom_tensor, op=torch.distributed.ReduceOp.SUM)
-            denom = denom_tensor.item()
-
-        loss = loss_sum / max(denom, 1.0)
+            loss *= self.accelerator.num_processes if self.args.n_gpu <= 1 else self.args.n_gpu
 
         if return_outputs:
             return loss, outputs
