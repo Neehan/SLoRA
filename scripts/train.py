@@ -287,6 +287,7 @@ def main():
     elif method == "fisher_info":
         trainer = FisherInfoTrainer(
             topk_tokens=config["gating"]["topk_tokens"],
+            topk_logits=config["gating"]["topk_logits"],
             padding_label=padding_label,
             model=model,
             args=training_args,
