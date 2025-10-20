@@ -15,7 +15,7 @@ cd "$(dirname "$0")/.."
 export PYTHONPATH="$(pwd):${PYTHONPATH}"
 export WANDB_PROJECT="slora"
 export CUDA_VISIBLE_DEVICES=0,1
-export OMP_NUM_THREADS=4
+export OMP_NUM_THREADS=2
 export TRANSFORMERS_ATTENTION_BACKEND=SDPA
 export FLASH_ATTENTION_SKIP=True
 
