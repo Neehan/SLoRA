@@ -143,13 +143,12 @@ class BaseTokenGatingTrainer(Trainer):
                     reduction="sum",
                     label_smoothing=label_smoothing,
                 )
-                # Scale loss to match baseline magnitude
-                # This ensures lr scheduling, logging, etc. work correctly
-                scale_factor = valid_count / max(selected_count, 1)
-                loss_sum = loss_sum * scale_factor
             else:
                 loss_sum = zero_loss
 
+            # Divide by valid_count (not selected_count) so loss magnitude is comparable
+            # This means selecting fewer tokens gives proportionally smaller gradients,
+            # which is correct - we're training on less data per step
             denom = valid_count
 
         loss = loss_sum / max(denom, 1.0)
