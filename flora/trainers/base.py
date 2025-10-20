@@ -141,7 +141,7 @@ class TokenGatingTrainer(Trainer):
             else:
                 loss_sum = zero_loss
 
-            denom = zero_loss.new_tensor(float(selected_count))
+            denom = zero_loss.new_tensor(float(valid_count))
 
         if (
             self.args.average_tokens_across_devices
