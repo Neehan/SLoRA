@@ -24,18 +24,20 @@ class SLoRATrainer(TokenGatingTrainer):
         self.topk_tokens = topk_tokens
 
         # Initialize sketcher
-        device = next(self.model.parameters()).device
-        config = self.model.config
+        device = next(self.model.parameters()).device  # type: ignore
+        config = self.model.config  # type: ignore
         self.sketcher = TensorSketch(
-            d_hidden=config.hidden_size,
-            vocab_size=config.vocab_size,
+            d_hidden=config.hidden_size,  # type: ignore
+            vocab_size=config.vocab_size,  # type: ignore
             sketch_dim=sketch_dim,
             topk_gradients=topk_gradients,
             seed=self.args.seed,
             device=str(device),
         )
 
-    def compute_token_mask(self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def compute_token_mask(
+        self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor
+    ) -> torch.Tensor:
         """
         Select tokens by gradient magnitude approximation.
 
