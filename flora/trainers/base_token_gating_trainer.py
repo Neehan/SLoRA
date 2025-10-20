@@ -144,7 +144,7 @@ class BaseTokenGatingTrainer(Trainer):
             else:
                 loss_sum = zero_loss
 
-            denom = float(valid_count)
+            denom = float(selected_count)
 
         if (
             self.args.average_tokens_across_devices
