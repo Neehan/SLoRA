@@ -1,8 +1,8 @@
 import torch
-from flora.trainers.base import TokenGatingTrainer
+from flora.trainers.base_token_gating_trainer import BaseTokenGatingTrainer
 
 
-class RandomTokenTrainer(TokenGatingTrainer):
+class RandomTokenTrainer(BaseTokenGatingTrainer):
     """Random token selection baseline."""
 
     def __init__(self, topk_tokens: float, padding_label: int, *args, **kwargs):

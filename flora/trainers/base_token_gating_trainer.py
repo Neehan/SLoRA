@@ -4,7 +4,7 @@ from transformers import Trainer
 from typing import Optional, Dict
 
 
-class TokenGatingTrainer(Trainer):
+class BaseTokenGatingTrainer(Trainer):
     """
     Base trainer with token-level gating.
 
@@ -106,7 +106,10 @@ class TokenGatingTrainer(Trainer):
 
         if valid_count != 0:
             with torch.no_grad():
-                token_mask = self.compute_token_mask(valid_hiddens, valid_logits, valid_labels)
+                if self.model.training:
+                    token_mask = self.compute_token_mask(valid_hiddens, valid_logits, valid_labels)
+                else:
+                    token_mask = torch.ones(valid_count, dtype=torch.bool, device=valid_logits.device)
 
             if token_mask.dim() != 1:
                 raise ValueError(

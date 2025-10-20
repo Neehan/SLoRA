@@ -19,7 +19,8 @@ from transformers import (
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from datasets import load_dataset
 
-from flora.trainers.base import TokenGatingTrainer
+from flora.trainers.baseline import BaselineTrainer
+from flora.trainers.base_token_gating_trainer import BaseTokenGatingTrainer
 from flora.trainers.random_trainer import RandomTokenTrainer
 from flora.trainers.flora_trainer import FLoRATrainer
 from flora.utils.seed import set_seed
@@ -226,8 +227,7 @@ def main():
     padding_label = config["training"]["padding_label"]
 
     if method == "baseline":
-        trainer = TokenGatingTrainer(
-            padding_label=padding_label,
+        trainer = BaselineTrainer(
             model=model,
             args=training_args,
             train_dataset=train_dataset,
