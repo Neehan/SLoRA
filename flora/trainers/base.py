@@ -102,7 +102,7 @@ class TokenGatingTrainer(Trainer):
         valid_labels = labels_flat[valid_mask]
 
         valid_count = valid_logits.size(0)
-        zero_loss = logits_flat.new_zeros(())
+        zero_loss = logits_flat.sum() * 0.0
 
         if valid_count == 0:
             loss = zero_loss
@@ -136,21 +136,25 @@ class TokenGatingTrainer(Trainer):
                 loss = zero_loss
             else:
                 label_smoothing = getattr(self.args, "label_smoothing_factor", 0.0)
-                ce_kwargs = {"reduction": "sum"}
-                if label_smoothing:
-                    ce_kwargs["label_smoothing"] = label_smoothing
+                loss_sum = F.cross_entropy(
+                    selected_logits,
+                    selected_labels,
+                    reduction="sum",
+                    label_smoothing=label_smoothing,
+                )
 
-                loss_sum = F.cross_entropy(selected_logits, selected_labels, **ce_kwargs)
-                loss = loss_sum / valid_count
+                denom = selected_logits.new_tensor(float(valid_count))
 
-        if (
-            self.args.average_tokens_across_devices
-            and self.model_accepts_loss_kwargs
-            and num_items_in_batch is not None
-        ):
-            loss = loss * (
-                self.accelerator.num_processes if self.args.n_gpu <= 1 else self.args.n_gpu
-            )
+                if (
+                    self.args.average_tokens_across_devices
+                    and torch.distributed.is_available()
+                    and torch.distributed.is_initialized()
+                    and num_items_in_batch is not None
+                ):
+                    torch.distributed.all_reduce(loss_sum, op=torch.distributed.ReduceOp.SUM)
+                    torch.distributed.all_reduce(denom, op=torch.distributed.ReduceOp.SUM)
+
+                loss = loss_sum / torch.clamp(denom, min=1.0)
 
         if return_outputs:
             return loss, outputs
