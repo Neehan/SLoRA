@@ -9,12 +9,12 @@ class TensorSketch:
     without materializing the full outer product.
 
     Uses sparse top-k logits: only sketch e[top_k] instead of full vocab.
-    Cost: O(d_hidden + topk_gradients + sketch_dim log sketch_dim) vs O(d_hidden × vocab_size).
+    Cost: O(d_hidden + topk_logits + sketch_dim log sketch_dim) vs O(d_hidden × vocab_size).
     """
 
-    def __init__(self, d_hidden: int, vocab_size: int, sketch_dim: int, topk_gradients: int, seed: int, device: str):
+    def __init__(self, d_hidden: int, vocab_size: int, sketch_dim: int, topk_logits: int, seed: int, device: str):
         self.sketch_dim = sketch_dim
-        self.topk_gradients = topk_gradients
+        self.topk_logits = topk_logits
         self.device = torch.device(device)
 
         # Generate on CPU for reproducibility, then move to device
@@ -41,7 +41,7 @@ class TensorSketch:
         N = hiddens.shape[0]
 
         # Get top-k logits to approximate sparse error vector
-        topk_values, topk_indices = logits.topk(self.topk_gradients, dim=1)
+        topk_values, topk_indices = logits.topk(self.topk_logits, dim=1)
 
         # Compute sparse errors directly: e[top_k] = logits[top_k] - one_hot(label)[top_k]
         # Avoid clone() by building errors in-place
@@ -59,7 +59,7 @@ class TensorSketch:
 
         weighted = (sel_signs.float() * errors_sparse).reshape(-1)
         buckets_flat = sel_buckets.reshape(-1)
-        batch_idx = torch.arange(N, device=self.device).unsqueeze(1).expand(-1, self.topk_gradients).reshape(-1)
+        batch_idx = torch.arange(N, device=self.device).unsqueeze(1).expand(-1, self.topk_logits).reshape(-1)
         s_e.index_put_((batch_idx, buckets_flat), weighted, accumulate=True)
 
         # Convolve via FFT: sketch(h ⊗ e) = IFFT(FFT(sketch(h)) * FFT(sketch(e)))

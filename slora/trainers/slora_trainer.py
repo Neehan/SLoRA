@@ -15,7 +15,7 @@ class SLoRATrainer(TokenGatingTrainer):
         self,
         topk_tokens: float,
         sketch_dim: int,
-        topk_gradients: int,
+        topk_logits: int,
         padding_label: int,
         *args,
         **kwargs,
@@ -30,7 +30,7 @@ class SLoRATrainer(TokenGatingTrainer):
             d_hidden=config.hidden_size,  # type: ignore
             vocab_size=config.vocab_size,  # type: ignore
             sketch_dim=sketch_dim,
-            topk_gradients=topk_gradients,
+            topk_logits=topk_logits,
             seed=self.args.seed,
             device=str(device),
         )
@@ -50,7 +50,7 @@ class SLoRATrainer(TokenGatingTrainer):
         # Score = ||sketch|| approximates gradient magnitude
         scores = sketches.norm(dim=1)
 
-        # Select top-k% tokens by score - more efficient than creating zeros + indexing
+        # Select top-k% tokens by score
         k = max(1, int(self.topk_tokens * scores.size(0)))
         topk_indices = scores.topk(k).indices
 

@@ -39,7 +39,11 @@ def load_config(config_path: str) -> Dict[str, Any]:
             for key, value in override.items():
                 if key == "base":
                     continue
-                if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                if (
+                    key in result
+                    and isinstance(result[key], dict)
+                    and isinstance(value, dict)
+                ):
                     result[key] = deep_merge(result[key], value)
                 else:
                     result[key] = value
@@ -71,18 +75,18 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
         except Exception:
             return {"text": None}
 
-    dataset_orig_size = len(dataset)
+    dataset_orig_size = len(dataset)  # type: ignore
     dataset = dataset.map(formatting_func)
     dataset = dataset.filter(lambda x: x["text"] is not None)
     logger.info(
-        f"Train dataset: kept {len(dataset)}/{dataset_orig_size} examples (skipped {dataset_orig_size - len(dataset)})"
+        f"Train dataset: kept {len(dataset)}/{dataset_orig_size} examples (skipped {dataset_orig_size - len(dataset)})"  # type: ignore
     )
 
-    eval_orig_size = len(eval_dataset)
+    eval_orig_size = len(eval_dataset)  # type: ignore
     eval_dataset = eval_dataset.map(formatting_func)
     eval_dataset = eval_dataset.filter(lambda x: x["text"] is not None)
     logger.info(
-        f"Eval dataset: kept {len(eval_dataset)}/{eval_orig_size} examples (skipped {eval_orig_size - len(eval_dataset)})"
+        f"Eval dataset: kept {len(eval_dataset)}/{eval_orig_size} examples (skipped {eval_orig_size - len(eval_dataset)})"  # type: ignore
     )
 
     def tokenize_func(examples):
@@ -119,8 +123,12 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
 
 def main():
     parser = argparse.ArgumentParser(description="Train SLoRA model")
-    parser.add_argument("--config", type=str, required=True, help="Path to YAML config file")
-    parser.add_argument("--local_rank", type=int, default=-1, help="Local rank for distributed training")
+    parser.add_argument(
+        "--config", type=str, required=True, help="Path to YAML config file"
+    )
+    parser.add_argument(
+        "--local_rank", type=int, default=-1, help="Local rank for distributed training"
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -141,9 +149,13 @@ def main():
     if config["model"].get("load_in_4bit", False):
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=getattr(torch, config["model"].get("bnb_4bit_compute_dtype", "bfloat16")),
+            bnb_4bit_compute_dtype=getattr(
+                torch, config["model"].get("bnb_4bit_compute_dtype", "bfloat16")
+            ),
             bnb_4bit_quant_type=config["model"].get("bnb_4bit_quant_type", "nf4"),
-            bnb_4bit_use_double_quant=config["model"].get("bnb_4bit_use_double_quant", True),
+            bnb_4bit_use_double_quant=config["model"].get(
+                "bnb_4bit_use_double_quant", True
+            ),
         )
         model_kwargs["quantization_config"] = bnb_config
         model_kwargs["device_map"] = "auto"
@@ -206,7 +218,9 @@ def main():
         ddp_find_unused_parameters=False,
     )
 
-    data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False, pad_to_multiple_of=8)
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer, mlm=False, pad_to_multiple_of=8
+    )
 
     method = config["gating"]["method"]
     padding_label = config["training"]["padding_label"]
@@ -236,7 +250,7 @@ def main():
         trainer = SLoRATrainer(
             topk_tokens=config["gating"]["topk_tokens"],
             sketch_dim=config["gating"]["sketch_dim"],
-            topk_gradients=config["gating"]["topk_gradients"],
+            topk_logits=config["gating"]["topk_logits"],
             padding_label=padding_label,
             model=model,
             args=training_args,

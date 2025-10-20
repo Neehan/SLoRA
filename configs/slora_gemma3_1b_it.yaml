@@ -1,0 +1,13 @@
+base: baseline.yaml
+
+training:
+  output_dir: ./outputs/slora_gemma3_1b_it
+
+gating:
+  method: slora
+  topk_tokens: 0.2
+  sketch_dim: 512
+  topk_logits: 128
+
+logging:
+  wandb_run_name: slora_gemma3_1b_it
