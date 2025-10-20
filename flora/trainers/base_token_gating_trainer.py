@@ -142,6 +142,10 @@ class BaseTokenGatingTrainer(Trainer):
                     reduction="sum",
                     label_smoothing=label_smoothing,
                 )
+                # Scale loss to match baseline magnitude
+                # This ensures lr scheduling, logging, etc. work correctly
+                scale_factor = valid_count / max(selected_count, 1)
+                loss_sum = loss_sum * scale_factor
             else:
                 loss_sum = zero_loss
 
