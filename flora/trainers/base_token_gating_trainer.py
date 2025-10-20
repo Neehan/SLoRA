@@ -19,9 +19,10 @@ class BaseTokenGatingTrainer(Trainer):
 
     def compute_token_mask(
         self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor
-    ) -> torch.Tensor:
+    ):
         """
         Return boolean mask [N] indicating which tokens to backprop.
+        Optionally return importance weights for unbiased sampling.
 
         Args:
             hiddens: [N, d_hidden]
@@ -30,6 +31,8 @@ class BaseTokenGatingTrainer(Trainer):
 
         Returns:
             mask: [N] boolean mask
+            OR
+            (mask, weights): tuple of mask and [k] importance weights for selected tokens
         """
         return torch.ones(logits.size(0), dtype=torch.bool, device=logits.device)
 
@@ -97,7 +100,13 @@ class BaseTokenGatingTrainer(Trainer):
             return zero_loss, zero_loss.new_tensor(0.0)
 
         with torch.no_grad():
-            token_mask = self.compute_token_mask(valid_hiddens, valid_logits, valid_labels)
+            result = self.compute_token_mask(valid_hiddens, valid_logits, valid_labels)
+
+        if isinstance(result, tuple):
+            token_mask, importance_weights = result
+        else:
+            token_mask = result
+            importance_weights = None
 
         token_mask = self._validate_token_mask(token_mask, valid_count, valid_logits.device)
         valid_labels = valid_labels.long()
@@ -110,12 +119,23 @@ class BaseTokenGatingTrainer(Trainer):
             return zero_loss, valid_count
 
         label_smoothing = getattr(self.args, "label_smoothing_factor", 0.0)
-        loss_sum = F.cross_entropy(
-            selected_logits.float(),
-            selected_labels,
-            reduction="sum",
-            label_smoothing=label_smoothing,
-        )
+
+        if importance_weights is not None:
+            loss_per_token = F.cross_entropy(
+                selected_logits.float(),
+                selected_labels,
+                reduction="none",
+                label_smoothing=label_smoothing,
+            )
+            loss_sum = (loss_per_token * importance_weights).sum()
+        else:
+            loss_sum = F.cross_entropy(
+                selected_logits.float(),
+                selected_labels,
+                reduction="sum",
+                label_smoothing=label_smoothing,
+            )
+
         return loss_sum, selected_count
 
     def compute_loss(
