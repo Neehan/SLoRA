@@ -66,12 +66,16 @@ class TokenGatingTrainer(Trainer):
             model_inputs.update(extra_kwargs)
 
         model_inputs["return_dict"] = True
+        model_inputs["output_hidden_states"] = True
         outputs = model(**model_inputs)
 
         if self.args.past_index >= 0:
             self._past = outputs[self.args.past_index]
 
-        hiddens = outputs.last_hidden_state
+        hidden_states = outputs.hidden_states
+        if hidden_states is None or len(hidden_states) == 0:
+            raise ValueError("Model did not return hidden states required for token gating.")
+        hiddens = hidden_states[-1]
         logits = outputs.logits
 
         # Align with next-token prediction: logits/hiddens position t predict labels at t+1
@@ -105,9 +109,22 @@ class TokenGatingTrainer(Trainer):
         else:
             with torch.no_grad():
                 token_mask = self.compute_token_mask(valid_hiddens, valid_logits, valid_labels)
-            token_mask = token_mask.to(device=valid_logits.device, dtype=torch.bool)
-            if token_mask.numel() != valid_count:
-                token_mask = token_mask[:valid_count]
+
+            if token_mask.dim() != 1:
+                raise ValueError(
+                    f"Token mask must be 1-D, got shape {tuple(token_mask.shape)}."
+                )
+            token_mask = token_mask.reshape(-1)
+            if token_mask.size(0) != valid_count:
+                raise ValueError(
+                    f"Token mask length {token_mask.size(0)} does not match valid token count {valid_count}."
+                )
+            if token_mask.dtype != torch.bool:
+                if torch.is_floating_point(token_mask):
+                    raise TypeError("Token mask must be boolean or integer, not floating point.")
+                token_mask = token_mask.to(dtype=torch.bool)
+            if token_mask.device != valid_logits.device:
+                token_mask = token_mask.to(valid_logits.device)
 
             valid_labels = valid_labels.long()
 
