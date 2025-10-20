@@ -105,15 +105,15 @@ class TokenGatingTrainer(Trainer):
         else:
             with torch.no_grad():
                 token_mask = self.compute_token_mask(valid_hiddens, valid_logits, valid_labels)
-        token_mask = token_mask.to(device=valid_logits.device, dtype=torch.bool)
-        if token_mask.numel() != valid_count:
-            token_mask = token_mask[:valid_count]
+            token_mask = token_mask.to(device=valid_logits.device, dtype=torch.bool)
+            if token_mask.numel() != valid_count:
+                token_mask = token_mask[:valid_count]
 
-        valid_labels = valid_labels.long()
+            valid_labels = valid_labels.long()
 
-        selected_logits = valid_logits[token_mask]
-        selected_labels = valid_labels[token_mask]
-        selected_count = selected_logits.size(0)
+            selected_logits = valid_logits[token_mask]
+            selected_labels = valid_labels[token_mask]
+            selected_count = selected_logits.size(0)
 
             if selected_count == 0:
                 loss = zero_loss
