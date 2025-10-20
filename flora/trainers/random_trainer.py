@@ -1,5 +1,5 @@
 import torch
-from slora.trainers.base import TokenGatingTrainer
+from flora.trainers.base import TokenGatingTrainer
 
 
 class RandomTokenTrainer(TokenGatingTrainer):

@@ -1,4 +1,4 @@
-name: slora
+name: flora
 channels:
   - pytorch
   - nvidia

@@ -62,8 +62,14 @@ class TokenGatingTrainer(Trainer):
 
             token_mask = self.compute_token_mask(valid_hiddens, valid_logits, valid_labels)
 
-            loss_per_token = F.cross_entropy(valid_logits, valid_labels, reduction="none")
-            loss = loss_per_token[token_mask].mean()
+            # Only compute loss for selected tokens to prevent gradient flow through unselected ones
+            selected_logits = valid_logits[token_mask]
+            selected_labels = valid_labels[token_mask]
+
+            if selected_logits.size(0) == 0:
+                return torch.tensor(0.0, device=logits.device)
+
+            loss = F.cross_entropy(selected_logits, selected_labels)
 
         if (not self.model_accepts_loss_kwargs or num_items_in_batch is None) and self.compute_loss_func is None:
             loss = loss / self.args.gradient_accumulation_steps

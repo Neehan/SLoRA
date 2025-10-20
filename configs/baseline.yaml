@@ -57,6 +57,6 @@ data:
 
 logging:
   use_wandb: true
-  wandb_project: slora
+  wandb_project: flora
   wandb_run_name: baseline_gemma3_1b_it
   report_to: wandb

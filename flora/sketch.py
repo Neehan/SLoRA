@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 
 class TensorSketch:
@@ -43,10 +44,11 @@ class TensorSketch:
         # Get top-k logits to approximate sparse error vector
         topk_values, topk_indices = logits.topk(self.topk_logits, dim=1)
 
-        # Compute sparse errors directly: e[top_k] = logits[top_k] - one_hot(label)[top_k]
-        # Avoid clone() by building errors in-place
+        # Compute sparse errors: e[top_k] = softmax(logits)[top_k] - one_hot(label)[top_k]
+        # Apply softmax to get probabilities, then gather top-k probs
+        topk_probs = F.softmax(logits, dim=-1).gather(1, topk_indices)
         label_mask = (topk_indices == labels.unsqueeze(1))
-        errors_sparse = topk_values - label_mask.float()
+        errors_sparse = topk_probs - label_mask.float()
 
         # CountSketch hiddens: map h to R^sketch_dim via random hash
         s_h = torch.zeros(N, self.sketch_dim, dtype=torch.float32, device=self.device)

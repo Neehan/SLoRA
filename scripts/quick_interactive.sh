@@ -1,8 +1,8 @@
 #!/bin/bash
-# === SLoRA Quick Test (interactive 2-GPU) ===
+# === FLoRA Quick Test (interactive 2-GPU) ===
 set -e
 
-echo "=== SLoRA Quick Test (2-GPU interactive) ==="
+echo "=== FLoRA Quick Test (2-GPU interactive) ==="
 echo "Start time: $(date)"
 
 # Activate your conda/Miniforge env
@@ -13,24 +13,24 @@ cd "$(dirname "$0")/.."
 
 # --- Environment variables ---
 export PYTHONPATH="$(pwd):${PYTHONPATH}"
-export WANDB_PROJECT="slora"
+export WANDB_PROJECT="flora"
 export CUDA_VISIBLE_DEVICES=0,1
 export OMP_NUM_THREADS=2
 export TRANSFORMERS_ATTENTION_BACKEND=SDPA
 export FLASH_ATTENTION_SKIP=True
 
-# --- SLoRA run ---
-echo "Running SLoRA..."
+# --- FLoRA run ---
+echo "Running FLoRA..."
 
 accelerate launch \
     --config_file configs/accelerate_config.yaml \
     --num_processes 2 \
     --mixed_precision bf16 \
     scripts/train.py \
-    --config configs/slora_gemma3_1b_it.yaml
+    --config configs/flora_gemma3_1b_it.yaml
 
-echo "SLoRA test complete!"
+echo "FLoRA test complete!"
 echo "End time: $(date)"
 echo ""
-echo "Results: outputs/slora_gemma3_1b_it"
-echo "Check W&B project 'slora' for metrics"
+echo "Results: outputs/flora_gemma3_1b_it"
+echo "Check W&B project 'flora' for metrics"

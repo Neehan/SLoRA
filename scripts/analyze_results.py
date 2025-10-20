@@ -1,73 +1,73 @@
 #!/usr/bin/env python3
 """
-Compare baseline LoRA vs SLoRA training results.
+Compare baseline LoRA vs FLoRA training results.
 """
 import argparse
 import json
 from pathlib import Path
 
 
-def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
-    """Compare baseline and SLoRA training runs."""
+def analyze_runs(baseline_dir: str, flora_dir: str, output_path: str):
+    """Compare baseline and FLoRA training runs."""
     baseline_path = Path(baseline_dir)
-    slora_path = Path(slora_dir)
+    flora_path = Path(flora_dir)
 
     trainer_state_baseline = baseline_path / "trainer_state.json"
-    trainer_state_slora = slora_path / "trainer_state.json"
+    trainer_state_flora = flora_path / "trainer_state.json"
 
-    if not trainer_state_baseline.exists() or not trainer_state_slora.exists():
+    if not trainer_state_baseline.exists() or not trainer_state_flora.exists():
         print("ERROR: trainer_state.json not found")
         return
 
     with open(trainer_state_baseline) as f:
         baseline_state = json.load(f)
-    with open(trainer_state_slora) as f:
-        slora_state = json.load(f)
+    with open(trainer_state_flora) as f:
+        flora_state = json.load(f)
 
     print("=" * 80)
-    print("SLoRA RESULTS COMPARISON")
+    print("FLoRA RESULTS COMPARISON")
     print("=" * 80)
 
     baseline_final = baseline_state["log_history"][-1]
-    slora_final = slora_state["log_history"][-1]
+    flora_final = flora_state["log_history"][-1]
 
     baseline_loss = baseline_final["loss"]
-    slora_loss = slora_final["loss"]
+    flora_loss = flora_final["loss"]
 
     baseline_runtime = None
-    slora_runtime = None
+    flora_runtime = None
     for entry in reversed(baseline_state["log_history"]):
         if "train_runtime" in entry:
             baseline_runtime = entry["train_runtime"]
             break
-    for entry in reversed(slora_state["log_history"]):
+    for entry in reversed(flora_state["log_history"]):
         if "train_runtime" in entry:
-            slora_runtime = entry["train_runtime"]
+            flora_runtime = entry["train_runtime"]
             break
 
     print("\n📊 TRAINING LOSS")
     print("-" * 80)
     print(f"Baseline: {baseline_loss:.4f}")
-    print(f"SLoRA:    {slora_loss:.4f}")
+    print(f"FLoRA:    {flora_loss:.4f}")
     print(
-        f"Diff:     {slora_loss - baseline_loss:+.4f} ({(slora_loss - baseline_loss) / baseline_loss * 100:+.2f}%)"
+        f"Diff:     {flora_loss - baseline_loss:+.4f} ({(flora_loss - baseline_loss) / baseline_loss * 100:+.2f}%)"
     )
 
     print("\n⏱️  RUNTIME")
     print("-" * 80)
-    if baseline_runtime and slora_runtime:
+    if baseline_runtime and flora_runtime:
         print(f"Baseline: {baseline_runtime:.1f}s")
-        print(f"SLoRA:    {slora_runtime:.1f}s")
-        print(f"Diff:     {slora_runtime - baseline_runtime:+.1f}s")
+        print(f"FLoRA:    {flora_runtime:.1f}s")
+        print(f"Diff:     {flora_runtime - baseline_runtime:+.1f}s")
     else:
         print("Runtime not found in logs")
 
-    print("\n⚙️  GATE METRICS (SLoRA)")
+    print("\n⚙️  GATE METRICS (FLoRA)")
     print("-" * 80)
 
-    gate_file = slora_path / "gate_metrics.json"
+    gate_file = flora_path / "gate_metrics.json"
     gate_entries = [
-        e for e in slora_state["log_history"] if "gate/acceptance_rate_overall" in e
+        e for e in flora_state["log_history"] if "gate/acceptance_rate_overall" in e
     ]
 
     acc_rate = None
@@ -88,7 +88,7 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
         final_gate = gate_entries[-1]
         acc_rate = final_gate["gate/acceptance_rate_overall"]
         accepted = final_gate.get("gate/accepted_steps_total", 0)
-        total = slora_state["global_step"]
+        total = flora_state["global_step"]
 
         print(f"Acceptance Rate:     {acc_rate:.2%}")
         print(f"Accepted Steps:      {accepted}")
@@ -102,11 +102,11 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
     print("-" * 80)
 
     baseline_eval = [e for e in baseline_state["log_history"] if "eval_loss" in e]
-    slora_eval = [e for e in slora_state["log_history"] if "eval_loss" in e]
+    flora_eval = [e for e in flora_state["log_history"] if "eval_loss" in e]
 
-    if baseline_eval and slora_eval:
+    if baseline_eval and flora_eval:
         print(f"Baseline Eval Loss: {baseline_eval[-1]['eval_loss']:.4f}")
-        print(f"SLoRA Eval Loss:    {slora_eval[-1]['eval_loss']:.4f}")
+        print(f"FLoRA Eval Loss:    {flora_eval[-1]['eval_loss']:.4f}")
     else:
         print("No eval metrics found (eval_steps may be > max_steps)")
 
@@ -114,7 +114,7 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
     print("✅ SUCCESS CRITERIA")
     print("=" * 80)
 
-    loss_diff_pct = abs((slora_loss - baseline_loss) / baseline_loss * 100)
+    loss_diff_pct = abs((flora_loss - baseline_loss) / baseline_loss * 100)
     print(f"✓ Loss difference: {loss_diff_pct:.2f}% (target: <0.5%)")
 
     if acc_rate is not None:
@@ -140,11 +140,11 @@ def analyze_runs(baseline_dir: str, slora_dir: str, output_path: str):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--baseline", type=str, required=True)
-    parser.add_argument("--slora", type=str, required=True)
+    parser.add_argument("--flora", type=str, required=True)
     parser.add_argument("--output", type=str, default="reports/analysis.md")
     args = parser.parse_args()
 
-    analyze_runs(args.baseline, args.slora, args.output)
+    analyze_runs(args.baseline, args.flora, args.output)
 
 
 if __name__ == "__main__":

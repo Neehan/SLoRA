@@ -1,9 +1,9 @@
 import torch
-from slora.trainers.base import TokenGatingTrainer
-from slora.sketch import TensorSketch
+from flora.trainers.base import TokenGatingTrainer
+from flora.sketch import TensorSketch
 
 
-class SLoRATrainer(TokenGatingTrainer):
+class FLoRATrainer(TokenGatingTrainer):
     """
     Token-level gating using tensor sketch of head gradients.
 

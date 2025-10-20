@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -p mit_preemptable
 #SBATCH -A mit_general
-#SBATCH --job-name=quick_slora
+#SBATCH --job-name=quick_flora
 #SBATCH -N 1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -13,15 +13,15 @@ module load miniforge/24.3.0-0
 
 set -e
 
-echo "=== SLoRA Test ==="
+echo "=== FLoRA Test ==="
 echo "Starting time: $(date)"
 
-PROJECT_ROOT="/home/notadib/projects/SLoRA"
+PROJECT_ROOT="/home/notadib/projects/FLoRA"
 cd ${PROJECT_ROOT}
 
 export PYTHONUNBUFFERED=1
 export PYTHONPATH="${PYTHONPATH}:${PROJECT_ROOT}"
-export WANDB_PROJECT="slora"
+export WANDB_PROJECT="flora"
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 export OMP_NUM_THREADS=4
 export TRANSFORMERS_ATTENTION_BACKEND=SDPA
@@ -29,16 +29,16 @@ export FLASH_ATTENTION_SKIP=True
 
 mkdir -p logs
 
-echo "Running SLoRA..."
+echo "Running FLoRA..."
 accelerate launch \
     --config_file configs/accelerate_config.yaml \
     --num_processes 4 \
     --mixed_precision bf16 \
     scripts/train.py \
-    --config configs/slora_gemma3_1b_it.yaml 2>&1 | tee logs/slora_gemma3_1b_it.log
+    --config configs/flora_gemma3_1b_it.yaml 2>&1 | tee logs/flora_gemma3_1b_it.log
 
-echo "SLoRA complete!"
+echo "FLoRA complete!"
 echo "End time: $(date)"
 echo ""
-echo "Results: outputs/slora_gemma3_1b_it"
-echo "Check W&B project 'slora' for metrics"
+echo "Results: outputs/flora_gemma3_1b_it"
+echo "Check W&B project 'flora' for metrics"

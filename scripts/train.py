@@ -19,11 +19,11 @@ from transformers import (
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from datasets import load_dataset
 
-from slora.trainers.base import TokenGatingTrainer
-from slora.trainers.random_trainer import RandomTokenTrainer
-from slora.trainers.slora_trainer import SLoRATrainer
-from slora.utils.seed import set_seed
-from slora.utils.logging import setup_logging
+from flora.trainers.base import TokenGatingTrainer
+from flora.trainers.random_trainer import RandomTokenTrainer
+from flora.trainers.flora_trainer import FLoRATrainer
+from flora.utils.seed import set_seed
+from flora.utils.logging import setup_logging
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
@@ -94,7 +94,6 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
             examples["text"],
             truncation=True,
             max_length=config["data"]["max_seq_length"],
-            padding="max_length",
         )
         result["labels"] = result["input_ids"].copy()
         return result
@@ -122,7 +121,7 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train SLoRA model")
+    parser = argparse.ArgumentParser(description="Train FLoRA model")
     parser.add_argument(
         "--config", type=str, required=True, help="Path to YAML config file"
     )
@@ -246,8 +245,8 @@ def main():
             processing_class=tokenizer,
             data_collator=data_collator,
         )
-    elif method == "slora":
-        trainer = SLoRATrainer(
+    elif method == "flora":
+        trainer = FLoRATrainer(
             topk_tokens=config["gating"]["topk_tokens"],
             sketch_dim=config["gating"]["sketch_dim"],
             topk_logits=config["gating"]["topk_logits"],

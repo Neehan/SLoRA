@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="slora",
+    name="flora",
     version="0.1.0",
-    description="Subspace-Gated LoRA (SLoRA) - Token-efficient fine-tuning via gradient novelty gating",
+    description="Fractional LoRA (FLoRA) - Token-efficient fine-tuning via sketch-based token selection",
     author="",
     packages=find_packages(),
     python_requires=">=3.10",

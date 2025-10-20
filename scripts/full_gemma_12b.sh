@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=slora_full
+#SBATCH --job-name=flora_full
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=8
@@ -8,20 +8,20 @@
 
 set -e
 
-echo "=== SLoRA Full Experiment (Gemma-3-12B-it, 400k samples) ==="
+echo "=== FLoRA Full Experiment (Gemma-3-12B-it, 400k samples) ==="
 echo "Starting time: $(date)"
 
 cd "$(dirname "$0")/.."
 
 source ~/.bashrc
-conda activate slora
+conda activate flora
 
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
-export WANDB_PROJECT="slora"
+export WANDB_PROJECT="flora"
 
-echo "Starting full SLoRA run..."
+echo "Starting full FLoRA run..."
 accelerate launch --config_file configs/accelerate_config.yaml \
-    scripts/train_slora.py \
+    scripts/train.py \
     --config configs/full_gemma3_12b_it.yaml
 
 echo "Full experiment complete!"

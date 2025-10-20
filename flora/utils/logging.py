@@ -5,7 +5,7 @@ from typing import Optional
 
 def setup_logging(level: str = "INFO", log_file: Optional[str] = None) -> logging.Logger:
     """
-    Configure logging for SLoRA.
+    Configure logging for FLoRA.
 
     Args:
         level: Logging level (DEBUG, INFO, WARNING, ERROR)
@@ -14,7 +14,7 @@ def setup_logging(level: str = "INFO", log_file: Optional[str] = None) -> loggin
     Returns:
         Configured logger
     """
-    logger = logging.getLogger("slora")
+    logger = logging.getLogger("flora")
     logger.setLevel(getattr(logging, level.upper()))
 
     formatter = logging.Formatter(
