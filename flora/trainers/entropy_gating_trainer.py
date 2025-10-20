@@ -4,7 +4,7 @@ from flora.trainers.base_token_gating_trainer import BaseTokenGatingTrainer
 
 
 class EntropyGatingTrainer(BaseTokenGatingTrainer):
-    """Sample tokens proportionally to entropy (stratified sampling with importance weighting)."""
+    """Sample tokens proportionally to entropy (stratified sampling)."""
 
     def __init__(self, topk_tokens: float, topk_logits: int, padding_label: int, *args, **kwargs):
         super().__init__(padding_label, *args, **kwargs)
@@ -24,6 +24,4 @@ class EntropyGatingTrainer(BaseTokenGatingTrainer):
         mask = torch.zeros(N, dtype=torch.bool, device=logits.device)
         mask[indices] = True
 
-        importance_weights = 1.0 / (sampling_probs[indices] * N)
-
-        return mask, importance_weights
+        return mask

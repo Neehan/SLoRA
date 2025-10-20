@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -p mit_preemptable
 #SBATCH -A mit_general
-#SBATCH --job-name=quick_fisher_energy
+#SBATCH --job-name=quick_fisher_info
 #SBATCH -N 1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -13,7 +13,7 @@ module load miniforge/24.3.0-0
 
 set -e
 
-echo "=== Fisher Energy Test ==="
+echo "=== Fisher Info Test ==="
 echo "Starting time: $(date)"
 
 PROJECT_ROOT="/home/notadib/projects/FLoRA"
@@ -29,16 +29,16 @@ export FLASH_ATTENTION_SKIP=True
 
 mkdir -p logs
 
-echo "Running Fisher Energy..."
+echo "Running Fisher Info..."
 accelerate launch \
     --config_file configs/accelerate_config.yaml \
     --num_processes 4 \
     --mixed_precision bf16 \
     scripts/train.py \
-    --config configs/fisher_energy_gemma3_1b_it.yaml 2>&1 | tee logs/fisher_energy_gemma3_1b_it.log
+    --config configs/fisher_info_gemma3_1b_it.yaml 2>&1 | tee logs/fisher_info_gemma3_1b_it.log
 
-echo "Fisher Energy complete!"
+echo "Fisher Info complete!"
 echo "End time: $(date)"
 echo ""
-echo "Results: outputs/fisher_energy_gemma3_1b_it"
+echo "Results: outputs/fisher_info_gemma3_1b_it"
 echo "Check W&B project 'flora' for metrics"

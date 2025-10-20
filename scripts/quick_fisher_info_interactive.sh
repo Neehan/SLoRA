@@ -19,18 +19,18 @@ export OMP_NUM_THREADS=2
 export TRANSFORMERS_ATTENTION_BACKEND=SDPA
 export FLASH_ATTENTION_SKIP=True
 
-# --- Fisher Energy run ---
-echo "Running Fisher Energy..."
+# --- Fisher Info run ---
+echo "Running Fisher Info..."
 
 accelerate launch \
     --config_file configs/accelerate_config.yaml \
     --num_processes 2 \
     --mixed_precision bf16 \
     scripts/train.py \
-    --config configs/fisher_energy_gemma3_1b_it.yaml
+    --config configs/fisher_info_gemma3_1b_it.yaml
 
-echo "Fisher Energy test complete!"
+echo "Fisher Info test complete!"
 echo "End time: $(date)"
 echo ""
-echo "Results: outputs/fisher_energy_gemma3_1b_it"
+echo "Results: outputs/fisher_info_gemma3_1b_it"
 echo "Check W&B project 'flora' for metrics"

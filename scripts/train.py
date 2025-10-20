@@ -25,7 +25,7 @@ from flora.trainers.base_token_gating_trainer import BaseTokenGatingTrainer
 from flora.trainers.random_trainer import RandomTokenTrainer
 from flora.trainers.flora_trainer import FLoRATrainer
 from flora.trainers.entropy_gating_trainer import EntropyGatingTrainer
-from flora.trainers.fisher_energy_trainer import FisherEnergyTrainer
+from flora.trainers.fisher_info_trainer import FisherInfoTrainer
 from flora.utils.seed import set_seed
 from flora.utils.logging import setup_logging
 
@@ -284,8 +284,8 @@ def main():
             processing_class=tokenizer,
             data_collator=data_collator,
         )
-    elif method == "fisher_energy":
-        trainer = FisherEnergyTrainer(
+    elif method == "fisher_info":
+        trainer = FisherInfoTrainer(
             topk_tokens=config["gating"]["topk_tokens"],
             padding_label=padding_label,
             model=model,
