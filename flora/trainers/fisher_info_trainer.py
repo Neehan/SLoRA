@@ -24,4 +24,4 @@ class FisherInfoTrainer(BaseTokenGatingTrainer):
         target_probs = torch.exp(target_logits - log_sum_exp)
         fisher = target_probs * (1 - target_probs)
 
-        return self.bernoulli_sample(fisher, k)
+        return self.pps_sample(fisher, k)

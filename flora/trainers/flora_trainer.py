@@ -48,4 +48,4 @@ class FLoRATrainer(BaseTokenGatingTrainer):
         scores = sketches.norm(dim=1)
 
         k = max(1, int(self.topk_tokens * scores.size(0)))
-        return self.bernoulli_sample(scores, k)
+        return self.pps_sample(scores, k)

@@ -18,26 +18,39 @@ class BaseTokenGatingTrainer(Trainer):
         self.model_accepts_loss_kwargs = False
 
     @staticmethod
-    def bernoulli_sample(scores: torch.Tensor, k: int):
+    def pps_sample(scores: torch.Tensor, k: int):
         """
-        Bernoulli sampling with importance weights (Horvitz-Thompson estimator).
+        PPS without replacement + Horvitz-Thompson weights via inclusion probabilities.
 
         Args:
-            scores: [N] non-negative scores
-            k: expected number of tokens to select
+            scores: [N] non-negative scores (proportional to sampling importance)
+            k: number of tokens to select
 
         Returns:
             mask: [N] boolean mask
-            importance_weights: [N] weights for unbiased estimation
+            importance_weights: [N] weights for unbiased estimation (1 / (N * π_i))
         """
         N = scores.size(0)
-        p = scores / scores.sum()
-        q = torch.clamp(p * (k / N), max=1.0)
+        w = scores / scores.sum()
 
-        u = torch.rand_like(q)
-        mask = u < q
+        tau_min, tau_max = 0.0, 1000.0
+        for _ in range(20):
+            tau = (tau_min + tau_max) / 2
+            expected_k = (1 - torch.exp(-tau * w)).sum()
+            if expected_k < k:
+                tau_min = tau
+            else:
+                tau_max = tau
 
-        importance_weights = 1.0 / (N * q)
+        pi = 1 - torch.exp(-tau * w)
+
+        keys = -torch.log(torch.rand_like(w)) / (w + 1e-10)
+        topk_indices = keys.topk(k, largest=False).indices
+
+        mask = torch.zeros(N, dtype=torch.bool, device=scores.device)
+        mask[topk_indices] = True
+
+        importance_weights = 1.0 / (N * pi.clamp(min=1e-10))
         return mask, importance_weights
 
     def compute_token_mask(

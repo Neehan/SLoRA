@@ -23,4 +23,4 @@ class EntropyGatingTrainer(BaseTokenGatingTrainer):
         topk_probs = F.softmax(topk_logits, dim=-1)
         entropy = -(topk_probs * torch.log(topk_probs + 1e-10)).sum(dim=-1)
 
-        return self.bernoulli_sample(entropy, k)
+        return self.pps_sample(entropy, k)
