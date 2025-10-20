@@ -5,6 +5,7 @@ training:
 
 gating:
   method: entropy_gating
+  entropy_window: 4
 
 logging:
   wandb_run_name: entropy_gating_gemma3_1b_it

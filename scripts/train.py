@@ -274,6 +274,8 @@ def main():
     elif method == "entropy_gating":
         trainer = EntropyGatingTrainer(
             topk_tokens=config["gating"]["topk_tokens"],
+            topk_logits=config["gating"]["topk_logits"],
+            entropy_window=config["gating"].get("entropy_window", 1),
             padding_label=padding_label,
             model=model,
             args=training_args,
