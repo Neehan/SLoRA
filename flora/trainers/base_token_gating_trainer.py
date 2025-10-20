@@ -79,12 +79,12 @@ class BaseTokenGatingTrainer(Trainer):
         hiddens = hidden_states[-1]
         logits = outputs.logits
 
-        # Align with next-token prediction: logits/hiddens position t predict labels at t+1
-        hiddens = hiddens[:, :-1, :].contiguous()
-        logits = logits[:, :-1, :].contiguous()
+        # Align with next-token prediction: pad labels then shift (matching HF's ForCausalLMLoss)
+        # Don't trim logits or hiddens - keep full sequence length
+        import torch.nn.functional as F_pad
+        labels = F_pad.pad(labels, (0, 1), value=self.padding_label)
         labels = labels[:, 1:].contiguous()
-        if attention_mask is not None:
-            attention_mask = attention_mask[:, 1:].contiguous()
+        # Note: attention_mask length matches original, labels now match too
 
         hiddens_flat = hiddens.view(-1, hiddens.size(-1))
         logits_flat = logits.view(-1, logits.size(-1))
