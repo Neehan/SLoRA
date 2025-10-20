@@ -230,8 +230,8 @@ def main():
         trainer = BaselineTrainer(
             model=model,
             args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
+            train_dataset=train_dataset,  # type: ignore
+            eval_dataset=eval_dataset,  # type: ignore
             processing_class=tokenizer,
             data_collator=data_collator,
         )

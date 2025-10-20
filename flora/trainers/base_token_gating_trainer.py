@@ -136,8 +136,9 @@ class BaseTokenGatingTrainer(Trainer):
 
             if selected_count > 0:
                 label_smoothing = getattr(self.args, "label_smoothing_factor", 0.0)
+                # Upcast to float32 to match HF's ForCausalLMLoss behavior
                 loss_sum = F.cross_entropy(
-                    selected_logits,
+                    selected_logits.float(),
                     selected_labels,
                     reduction="sum",
                     label_smoothing=label_smoothing,
