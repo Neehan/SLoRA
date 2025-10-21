@@ -16,12 +16,14 @@ class FLoRATrainer(BaseTokenGatingTrainer):
         topk_tokens: float,
         sketch_dim: int,
         topk_logits: int,
+        weight_clip: float,
         padding_label: int,
         *args,
         **kwargs,
     ):
         super().__init__(padding_label, *args, **kwargs)
         self.topk_tokens = topk_tokens
+        self.weight_clip = weight_clip
 
         # Initialize sketcher
         device = next(self.model.parameters()).device  # type: ignore
@@ -48,4 +50,6 @@ class FLoRATrainer(BaseTokenGatingTrainer):
         scores = sketches.norm(dim=1)
 
         k = max(1, int(self.topk_tokens * scores.size(0)))
-        return self.pps_sample(scores, k)
+        mask, weights = self.pps_sample(scores, k)
+        weights = torch.clamp(weights, max=self.weight_clip)
+        return mask, weights

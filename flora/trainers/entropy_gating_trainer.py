@@ -7,11 +7,12 @@ class EntropyGatingTrainer(BaseTokenGatingTrainer):
     """Sample tokens proportionally to entropy (stratified sampling)."""
 
     def __init__(
-        self, topk_tokens: float, topk_logits: int, padding_label: int, *args, **kwargs
+        self, topk_tokens: float, topk_logits: int, weight_clip: float, padding_label: int, *args, **kwargs
     ):
         super().__init__(padding_label, *args, **kwargs)
         self.topk_tokens = topk_tokens
         self.topk_logits = topk_logits
+        self.weight_clip = weight_clip
 
     def compute_token_mask(
         self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor
@@ -23,4 +24,6 @@ class EntropyGatingTrainer(BaseTokenGatingTrainer):
         topk_probs = F.softmax(topk_logits, dim=-1)
         entropy = -(topk_probs * torch.log(topk_probs + 1e-10)).sum(dim=-1)
 
-        return self.pps_sample(entropy, k)
+        mask, weights = self.pps_sample(entropy, k)
+        weights = torch.clamp(weights, max=self.weight_clip)
+        return mask, weights

@@ -8,6 +8,7 @@ gating:
   topk_tokens: 0.2
   sketch_dim: 512
   topk_logits: 128
+  weight_clip: 10.0
 
 logging:
   wandb_run_name: flora_gemma3_1b_it

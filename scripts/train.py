@@ -26,6 +26,7 @@ from flora.trainers.random_trainer import RandomTokenTrainer
 from flora.trainers.flora_trainer import FLoRATrainer
 from flora.trainers.entropy_gating_trainer import EntropyGatingTrainer
 from flora.trainers.fisher_info_trainer import FisherInfoTrainer
+from flora.trainers.loss_gating_trainer import LossGatingTrainer
 from flora.utils.seed import set_seed
 from flora.utils.logging import setup_logging
 
@@ -264,6 +265,7 @@ def main():
             topk_tokens=config["gating"]["topk_tokens"],
             sketch_dim=config["gating"]["sketch_dim"],
             topk_logits=config["gating"]["topk_logits"],
+            weight_clip=config["gating"]["weight_clip"],
             padding_label=padding_label,
             model=model,
             args=training_args,
@@ -276,6 +278,7 @@ def main():
         trainer = EntropyGatingTrainer(
             topk_tokens=config["gating"]["topk_tokens"],
             topk_logits=config["gating"]["topk_logits"],
+            weight_clip=config["gating"]["weight_clip"],
             padding_label=padding_label,
             model=model,
             args=training_args,
@@ -288,6 +291,18 @@ def main():
         trainer = FisherInfoTrainer(
             topk_tokens=config["gating"]["topk_tokens"],
             topk_logits=config["gating"]["topk_logits"],
+            padding_label=padding_label,
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            processing_class=tokenizer,
+            data_collator=data_collator,
+        )
+    elif method == "loss_gating":
+        trainer = LossGatingTrainer(
+            topk_tokens=config["gating"]["topk_tokens"],
+            weight_clip=config["gating"]["weight_clip"],
             padding_label=padding_label,
             model=model,
             args=training_args,
