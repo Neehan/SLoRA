@@ -15,6 +15,9 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
 
     def _install_hooks(self):
         def forward_hook(module, input, output):
+            if not self.model.training:
+                return
+
             h = input[0].detach()
             h_norm = h.float().norm(dim=-1)
 
@@ -77,16 +80,17 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
             outputs, labels, attention_mask
         )
 
-        labels_padded = F.pad(labels, (0, 1), value=self.padding_label)
-        labels_shifted = labels_padded[:, 1:].contiguous()
-        labels_flat = labels_shifted.view(-1)
+        if self.model.training:
+            labels_padded = F.pad(labels, (0, 1), value=self.padding_label)
+            labels_shifted = labels_padded[:, 1:].contiguous()
+            labels_flat = labels_shifted.view(-1)
 
-        if attention_mask is not None:
-            attention_mask_flat = attention_mask.view(-1).bool()
-        else:
-            attention_mask_flat = torch.ones_like(labels_flat, dtype=torch.bool)
+            if attention_mask is not None:
+                attention_mask_flat = attention_mask.view(-1).bool()
+            else:
+                attention_mask_flat = torch.ones_like(labels_flat, dtype=torch.bool)
 
-        self.cached_valid_mask = (labels_flat != self.padding_label) & attention_mask_flat
+            self.cached_valid_mask = (labels_flat != self.padding_label) & attention_mask_flat
 
         return valid_hiddens, valid_logits, valid_labels, logits_flat
 
