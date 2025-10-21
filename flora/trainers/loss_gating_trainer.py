@@ -53,7 +53,9 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         if self.cached_hiddens is None:
             raise RuntimeError("LoRA activations not captured. Hook may have failed.")
 
-        h_flat = self.cached_hiddens.view(-1, self.cached_hiddens.size(-1))
+        h_flat = self.cached_hiddens.reshape(-1, self.cached_hiddens.size(-1))
+        if h_flat.size(0) != N:
+            raise RuntimeError(f"Cached hiddens size {h_flat.size(0)} doesn't match tokens {N}")
         x = h_flat.float().norm(dim=-1)
 
         scores = (u * x).clamp_min(0.0)
