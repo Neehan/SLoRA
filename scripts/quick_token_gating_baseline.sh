@@ -1,35 +1,43 @@
 #!/bin/bash
-# === Baseline Token Gating Quick Test (interactive 2-GPU) ===
-set -e
+#SBATCH -p mit_preemptable
+#SBATCH -A mit_general
+#SBATCH --job-name=quick_baseline_token_gating
+#SBATCH -N 1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --gres=gpu:l40s:4
+#SBATCH --mem=64GB
+#SBATCH -t 48:00:00
 
-echo "=== Baseline Token Gating Quick Test (2-GPU interactive) ==="
-echo "Start time: $(date)"
-
-# Activate your conda/Miniforge env
 module load miniforge/24.3.0-0
 
-# Move to project root
-cd "$(dirname "$0")/.."
+set -e
 
-# --- Environment variables ---
-export PYTHONPATH="$(pwd):${PYTHONPATH}"
+echo "=== Baseline Token Gating Test ==="
+echo "Starting time: $(date)"
+
+PROJECT_ROOT="/home/notadib/projects/FLoRA"
+cd ${PROJECT_ROOT}
+
+export PYTHONUNBUFFERED=1
+export PYTHONPATH="${PYTHONPATH}:${PROJECT_ROOT}"
 export WANDB_PROJECT="flora"
-export CUDA_VISIBLE_DEVICES=0,1
-export OMP_NUM_THREADS=2
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+export OMP_NUM_THREADS=4
 export TRANSFORMERS_ATTENTION_BACKEND=SDPA
 export FLASH_ATTENTION_SKIP=True
 
-# --- Baseline token gating run ---
-echo "Running baseline with token gating trainer..."
+mkdir -p logs
 
+echo "Running baseline token gating..."
 accelerate launch \
     --config_file configs/accelerate_config.yaml \
-    --num_processes 2 \
+    --num_processes 4 \
     --mixed_precision bf16 \
     scripts/train.py \
-    --config configs/baseline_token_gating.yaml
+    --config configs/baseline_token_gating.yaml 2>&1 | tee logs/baseline_token_gating.log
 
-echo "Baseline token gating test complete!"
+echo "Baseline token gating complete!"
 echo "End time: $(date)"
 echo ""
 echo "Results: outputs/baseline_token_gating_gemma3_1b_it"
