@@ -9,29 +9,34 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         super().__init__(*args, **kwargs)
         self.topk_tokens = topk_tokens
         self.weight_clip = weight_clip
-        self.hook_handle = None
-        self.cached_hiddens = None
+        self.hook_handles = []
+        self.lora_norm_accumulator = None
+        self.cached_valid_mask = None
 
-    def _install_hook(self):
-        target_module = None
+    def _install_hooks(self):
+        def forward_hook(module, input, output):
+            h = input[0].detach()
+            h_norm = h.float().norm(dim=-1)
+
+            if self.lora_norm_accumulator is None:
+                self.lora_norm_accumulator = h_norm
+            else:
+                self.lora_norm_accumulator = self.lora_norm_accumulator + h_norm
+
         for name, module in self.model.named_modules():
             if "lora_A" in name and hasattr(module, "default"):
-                target_module = module.default
-                break
+                handle = module.default.register_forward_hook(forward_hook)
+                self.hook_handles.append(handle)
 
-        if target_module is None:
-            raise RuntimeError("Could not find LoRA module to hook")
+        if len(self.hook_handles) == 0:
+            raise RuntimeError("Could not find any LoRA modules to hook")
 
-        def forward_hook(module, input, output):
-            self.cached_hiddens = input[0].detach()
-
-        self.hook_handle = target_module.register_forward_hook(forward_hook)
-
-    def _remove_hook(self):
-        if self.hook_handle is not None:
-            self.hook_handle.remove()
-            self.hook_handle = None
-        self.cached_hiddens = None
+    def _remove_hooks(self):
+        for handle in self.hook_handles:
+            handle.remove()
+        self.hook_handles = []
+        self.lora_norm_accumulator = None
+        self.cached_valid_mask = None
 
     def compute_token_mask(self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor):
         N, V = logits.size(0), logits.size(1)
@@ -50,15 +55,16 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         u2 = p_sumsq + y_norm_sq - 2.0 * p_dot_y
         u = torch.sqrt(u2.clamp_min(0.0) + 1e-12)
 
-        if self.cached_hiddens is None:
+        if self.lora_norm_accumulator is None or self.cached_valid_mask is None:
             raise RuntimeError("LoRA activations not captured. Hook may have failed.")
 
-        h_flat = self.cached_hiddens.reshape(-1, self.cached_hiddens.size(-1))
-        if h_flat.size(0) != N:
-            raise RuntimeError(f"Cached hiddens size {h_flat.size(0)} doesn't match tokens {N}")
-        x = h_flat.float().norm(dim=-1)
+        x_flat = self.lora_norm_accumulator.reshape(-1)
+        x_valid = x_flat[self.cached_valid_mask]
 
-        scores = (u * x).clamp_min(0.0)
+        if x_valid.size(0) != N:
+            raise RuntimeError(f"Accumulated norms size {x_valid.size(0)} doesn't match tokens {N}")
+
+        scores = (u * x_valid).clamp_min(0.0)
 
         k = max(1, min(N, int(self.topk_tokens * N)))
         mask, weights = self.pps_sample(scores + 1e-12, k)
@@ -66,23 +72,42 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
 
         return mask, weights
 
+    def _extract_hiddens_logits(self, outputs, labels, attention_mask):
+        valid_hiddens, valid_logits, valid_labels, logits_flat = super()._extract_hiddens_logits(
+            outputs, labels, attention_mask
+        )
+
+        labels_padded = F.pad(labels, (0, 1), value=self.padding_label)
+        labels_shifted = labels_padded[:, 1:].contiguous()
+        labels_flat = labels_shifted.view(-1)
+
+        if attention_mask is not None:
+            attention_mask_flat = attention_mask.view(-1).bool()
+        else:
+            attention_mask_flat = torch.ones_like(labels_flat, dtype=torch.bool)
+
+        self.cached_valid_mask = (labels_flat != self.padding_label) & attention_mask_flat
+
+        return valid_hiddens, valid_logits, valid_labels, logits_flat
+
     def _compute_gated_loss(self, valid_hiddens, valid_logits, valid_labels, logits_flat):
         try:
             return super()._compute_gated_loss(valid_hiddens, valid_logits, valid_labels, logits_flat)
         finally:
-            self.cached_hiddens = None
+            self.lora_norm_accumulator = None
+            self.cached_valid_mask = None
 
     def training_step(self, model, inputs, num_items_in_batch=None):
         try:
-            if self.hook_handle is None:
-                self._install_hook()
+            if len(self.hook_handles) == 0:
+                self._install_hooks()
             return super().training_step(model, inputs, num_items_in_batch)
         except Exception:
-            self._remove_hook()
+            self._remove_hooks()
             raise
 
     def train(self, *args, **kwargs):
         try:
             return super().train(*args, **kwargs)
         finally:
-            self._remove_hook()
+            self._remove_hooks()
