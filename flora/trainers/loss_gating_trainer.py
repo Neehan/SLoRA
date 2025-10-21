@@ -70,11 +70,11 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         finally:
             self.cached_hiddens = None
 
-    def training_step(self, model, inputs):
+    def training_step(self, model, inputs, num_items_in_batch=None):
         try:
             if self.hook_handle is None:
                 self._install_hook()
-            return super().training_step(model, inputs)
+            return super().training_step(model, inputs, num_items_in_batch)
         except Exception:
             self._remove_hook()
             raise
