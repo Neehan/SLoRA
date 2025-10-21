@@ -16,7 +16,7 @@ set -e
 echo "=== Loss Gating Baseline Test ==="
 echo "Starting time: $(date)"
 
-PROJECT_ROOT="/home/notadib/projects/FLoRA"
+PROJECT_ROOT="/home/notadib/projects/SLoRA"
 cd ${PROJECT_ROOT}
 
 export PYTHONUNBUFFERED=1
