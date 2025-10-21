@@ -16,8 +16,7 @@ export PYTHONPATH="$(pwd):${PYTHONPATH}"
 export WANDB_PROJECT="flora"
 export CUDA_VISIBLE_DEVICES=0,1
 export OMP_NUM_THREADS=2
-export TRANSFORMERS_ATTENTION_BACKEND=SDPA
-export FLASH_ATTENTION_SKIP=True
+export TRANSFORMERS_ATTENTION_BACKEND=flash_attention_2
 
 # --- Baseline run ---
 echo "Running baseline..."

@@ -1,6 +1,6 @@
 model:
   name: google/gemma-3-1b-it
-  use_flash_attention_2: false
+  use_flash_attention_2: true
 
 training:
   output_dir: ./outputs/baseline_gemma3_1b_it
