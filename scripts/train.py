@@ -94,6 +94,7 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
                         return {"text": None}
                 if formatted == "<bos>":
                     return {"text": None}
+                formatted += "<eos>"
                 return {"text": formatted}
             elif "instruction" in example:
                 instruction = example["instruction"]
@@ -105,7 +106,7 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
                 else:
                     user_content = instruction
 
-                formatted = f"<bos><start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n{output}<end_of_turn>"
+                formatted = f"<bos><start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n{output}<end_of_turn>\n<eos>"
                 return {"text": formatted}
             else:
                 return {"text": None}
@@ -176,6 +177,19 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(config["model"]["name"])
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
+
+    if not tokenizer.chat_template:
+        tokenizer.chat_template = (
+            "{{ bos_token }}"
+            "{% for message in messages %}"
+            "{% if message['role'] == 'user' %}"
+            "<start_of_turn>user\n{{ message['content'] }}<end_of_turn>\n"
+            "{% elif message['role'] == 'assistant' or message['role'] == 'model' %}"
+            "<start_of_turn>model\n{{ message['content'] }}<end_of_turn>\n"
+            "{% endif %}"
+            "{% endfor %}"
+            "{% if add_generation_prompt %}<start_of_turn>model\n{% endif %}"
+        )
 
     model_kwargs = {}
     if config["model"]["use_flash_attention_2"]:
