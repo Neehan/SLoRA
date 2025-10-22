@@ -82,9 +82,11 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
             formatted = ""
             for msg in messages:
                 if msg["role"] == "user":
-                    formatted += f"<start_of_turn>user\n{msg['content']}<end_of_turn>"
+                    formatted += f"<start_of_turn>user\n{msg['content']}<end_of_turn>\n"
                 elif msg["role"] == "assistant" or msg["role"] == "model":
-                    formatted += f"<start_of_turn>model\n{msg['content']}<end_of_turn>"
+                    formatted += (
+                        f"<start_of_turn>model\n{msg['content']}<end_of_turn>\n"
+                    )
                 else:  # skip examples with tool calls gemma doesnt support them
                     return {"text": None}
             if not formatted:
@@ -161,7 +163,7 @@ def main():
 
     model_kwargs = {}
     if config["model"]["use_flash_attention_2"]:
-        import flash_attn
+        import flash_attn  # type: ignore
 
         model_kwargs["attn_implementation"] = "flash_attention_2"
         logger.info("Using Flash Attention 2")
