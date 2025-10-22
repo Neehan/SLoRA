@@ -40,5 +40,5 @@ accelerate launch \
 echo "Baseline token gating complete!"
 echo "End time: $(date)"
 echo ""
-echo "Results: outputs/baseline_token_gating_gemma3_1b"
+echo "Results: outputs/baseline_token_gating_gemma3_1b_pt"
 echo "Check W&B project 'flora' for metrics"

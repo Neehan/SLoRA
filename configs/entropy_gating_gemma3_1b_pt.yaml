@@ -1,0 +1,10 @@
+base: flora_gemma3_1b_pt.yaml
+
+training:
+  output_dir: ./outputs/entropy_gating_gemma3_1b_pt
+
+gating:
+  method: entropy_gating
+
+logging:
+  wandb_run_name: entropy_gating_gemma3_1b_pt

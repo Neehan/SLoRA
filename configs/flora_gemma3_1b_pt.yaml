@@ -1,7 +1,7 @@
 base: baseline.yaml
 
 training:
-  output_dir: ./outputs/flora_gemma3_1b
+  output_dir: ./outputs/flora_gemma3_1b_pt
 
 gating:
   method: flora
@@ -11,4 +11,4 @@ gating:
   weight_clip: 10.0
 
 logging:
-  wandb_run_name: flora_gemma3_1b
+  wandb_run_name: flora_gemma3_1b_pt

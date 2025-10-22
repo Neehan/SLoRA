@@ -27,10 +27,10 @@ accelerate launch \
     --num_processes 2 \
     --mixed_precision bf16 \
     scripts/train.py \
-    --config configs/random_gemma3_1b.yaml
+    --config configs/random_gemma3_1b_pt.yaml
 
 echo "Random test complete!"
 echo "End time: $(date)"
 echo ""
-echo "Results: outputs/random_gemma3_1b"
+echo "Results: outputs/random_gemma3_1b_pt"
 echo "Check W&B project 'flora' for metrics"

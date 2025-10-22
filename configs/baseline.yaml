@@ -1,9 +1,9 @@
 model:
-  name: google/gemma-3-1b
-  use_flash_attention_2: false
+  name: google/gemma-3-1b-pt
+  use_flash_attention_2: true
 
 training:
-  output_dir: ./outputs/baseline_gemma3_1b
+  output_dir: ./outputs/baseline_gemma3_1b_pt
   num_train_epochs: 1
   max_steps: 1000
   per_device_train_batch_size: 2
@@ -58,5 +58,5 @@ data:
 logging:
   use_wandb: true
   wandb_project: flora
-  wandb_run_name: baseline_gemma3_1b
+  wandb_run_name: baseline_gemma3_1b_pt
   report_to: wandb

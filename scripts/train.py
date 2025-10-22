@@ -148,7 +148,7 @@ def main():
     tokenizer.padding_side = "right"
 
     model_kwargs = {}
-    if config["model"].get("use_flash_attention_2", False):
+    if config["model"].get("use_flash_attention_2", True):
         model_kwargs["attn_implementation"] = "flash_attention_2"
 
     if config["model"].get("load_in_4bit", False):

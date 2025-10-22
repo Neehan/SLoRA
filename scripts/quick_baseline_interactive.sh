@@ -32,5 +32,5 @@ accelerate launch \
 echo "Baseline test complete!"
 echo "End time: $(date)"
 echo ""
-echo "Results: outputs/baseline_gemma3_1b"
+echo "Results: outputs/baseline_gemma3_1b_pt"
 echo "Check W&B project 'flora' for metrics"
