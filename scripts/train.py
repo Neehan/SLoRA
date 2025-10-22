@@ -318,6 +318,7 @@ def main():
         trainer = LossGatingTrainer(
             topk_tokens=config["gating"]["topk_tokens"],
             weight_clip=config["gating"]["weight_clip"],
+            topk_logits=config["gating"]["topk_logits"],
             padding_label=padding_label,
             model=model,
             args=training_args,
