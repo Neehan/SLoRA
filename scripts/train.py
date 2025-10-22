@@ -77,22 +77,20 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
                 add_generation_prompt=False,
             )
             return {"text": text}
-
-        messages = example["messages"]
-        formatted = []
-        for msg in messages:
-            if msg["role"] == "user":
-                formatted.append(f"<start_of_turn>user\n{msg['content']}<end_of_turn>")
-            elif msg["role"] == "assistant":
-                formatted.append(f"<start_of_turn>model\n{msg['content']}<end_of_turn>")
-            else:
+        else:
+            messages = example["messages"]
+            formatted = ""
+            for msg in messages:
+                if msg["role"] == "user":
+                    formatted += f"<start_of_turn>user\n{msg['content']}<end_of_turn>"
+                elif msg["role"] == "assistant" or msg["role"] == "model":
+                    formatted += f"<start_of_turn>model\n{msg['content']}<end_of_turn>"
+                else:  # skip examples with tool calls gemma doesnt support them
+                    return {"text": None}
+            if not formatted:
                 return {"text": None}
 
-        if not formatted:
-            return {"text": None}
-
-        text = "\n".join(formatted) + "\n"
-        return {"text": text}
+            return {"text": formatted}
 
     dataset_orig_size = len(dataset)  # type: ignore
     dataset = dataset.map(formatting_func)
@@ -164,6 +162,7 @@ def main():
     model_kwargs = {}
     if config["model"]["use_flash_attention_2"]:
         import flash_attn
+
         model_kwargs["attn_implementation"] = "flash_attention_2"
         logger.info("Using Flash Attention 2")
     else:
@@ -173,7 +172,9 @@ def main():
     if config["model"]["load_in_4bit"]:
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=getattr(torch, config["model"]["bnb_4bit_compute_dtype"]),
+            bnb_4bit_compute_dtype=getattr(
+                torch, config["model"]["bnb_4bit_compute_dtype"]
+            ),
             bnb_4bit_quant_type=config["model"]["bnb_4bit_quant_type"],
             bnb_4bit_use_double_quant=config["model"]["bnb_4bit_use_double_quant"],
         )
