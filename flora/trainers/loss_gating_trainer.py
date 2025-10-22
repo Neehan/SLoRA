@@ -16,25 +16,21 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         if self.w_o_norm_factors is not None and self.w_u is not None:
             return self.w_o_norm_factors, self.w_u
 
-        print("=" * 80)
-        print("DEBUG: Model structure")
-        print("=" * 80)
-        for name, module in self.model.named_modules():
-            if "o_proj" in name or "lm_head" in name:
-                print(f"Name: {name}")
-                print(f"Type: {type(module)}")
-                print(f"Dir: {[x for x in dir(module) if not x.startswith('_')][:20]}")
-                print("-" * 80)
-
         layers_dict = {}
         for name, module in self.model.named_modules():
-            if ".self_attn.o_proj" in name or ".self_attn.out_proj" in name:
+            if name.endswith(".self_attn.o_proj") or name.endswith(".self_attn.out_proj"):
                 parts = name.split(".")
-                for i, part in enumerate(parts):
+                layer_idx = None
+                for part in parts:
                     if part.isdigit():
                         layer_idx = int(part)
-                        layers_dict[layer_idx] = module.weight.data
                         break
+
+                if layer_idx is not None:
+                    if hasattr(module, 'base_layer'):
+                        layers_dict[layer_idx] = module.base_layer.weight.data
+                    else:
+                        layers_dict[layer_idx] = module.weight.data
 
         if not layers_dict:
             raise RuntimeError("Could not find attention output projections (o_proj/out_proj)")
@@ -43,7 +39,10 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
 
         for name, module in self.model.named_modules():
             if name.endswith("lm_head"):
-                self.w_u = module.weight.data
+                if hasattr(module, 'base_layer'):
+                    self.w_u = module.base_layer.weight.data
+                else:
+                    self.w_u = module.weight.data
                 break
 
         if self.w_u is None:
