@@ -76,9 +76,22 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
                 tokenize=False,
                 add_generation_prompt=False,
             )
-        else:
-            messages = example["messages"]
-            text = "\n".join([f"<|{msg['role']}|>\n{msg['content']}" for msg in messages]) + "\n"
+            return {"text": text}
+
+        messages = example["messages"]
+        formatted = []
+        for msg in messages:
+            if msg["role"] == "user":
+                formatted.append(f"<start_of_turn>user\n{msg['content']}<end_of_turn>")
+            elif msg["role"] == "assistant":
+                formatted.append(f"<start_of_turn>model\n{msg['content']}<end_of_turn>")
+            else:
+                return {"text": None}
+
+        if not formatted:
+            return {"text": None}
+
+        text = "\n".join(formatted) + "\n"
         return {"text": text}
 
     dataset_orig_size = len(dataset)  # type: ignore
