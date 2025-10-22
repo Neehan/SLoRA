@@ -6,6 +6,8 @@ if [ "$#" -eq 0 ]; then
     exit 1
 fi
 
+cd "$(dirname "$0")/.."
+
 TASKS=$(IFS=,; echo "$*")
 NUM_FEWSHOT=8
 BATCH_SIZE=2
