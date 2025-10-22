@@ -19,7 +19,7 @@ echo "================================================"
 
 echo "Evaluating base model: google/gemma-3-1b-pt"
 lm_eval --model hf \
-  --model_args pretrained=google/gemma-3-1b-pt,trust_remote_code=True,parallelize=True,device_map=auto \
+  --model_args pretrained=google/gemma-3-1b-pt,trust_remote_code=True \
   --tasks "$TASKS" \
   --num_fewshot $NUM_FEWSHOT \
   --batch_size $BATCH_SIZE \
@@ -29,7 +29,7 @@ lm_eval --model hf \
 echo "================================================"
 echo "Evaluating: base_token_gating_gemma3_1b_pt"
 lm_eval --model hf \
-  --model_args pretrained=./outputs/base_token_gating_gemma3_1b_pt/checkpoint-$CHECKPOINT,trust_remote_code=True,parallelize=True,device_map=auto \
+  --model_args pretrained=./outputs/base_token_gating_gemma3_1b_pt/checkpoint-$CHECKPOINT,trust_remote_code=True \
   --tasks "$TASKS" \
   --num_fewshot $NUM_FEWSHOT \
   --batch_size $BATCH_SIZE \
@@ -40,7 +40,7 @@ lm_eval --model hf \
 echo "================================================"
 echo "Evaluating: random_gemma3_1b_pt"
 lm_eval --model hf \
-  --model_args pretrained=./outputs/random_gemma3_1b_pt/checkpoint-$CHECKPOINT,trust_remote_code=True,parallelize=True,device_map=auto \
+  --model_args pretrained=./outputs/random_gemma3_1b_pt/checkpoint-$CHECKPOINT,trust_remote_code=True \
   --tasks "$TASKS" \
   --num_fewshot $NUM_FEWSHOT \
   --batch_size $BATCH_SIZE \
@@ -51,7 +51,7 @@ lm_eval --model hf \
 echo "================================================"
 echo "Evaluating: loss_gating_gemma3_1b_pt"
 lm_eval --model hf \
-  --model_args pretrained=./outputs/loss_gating_gemma3_1b_pt/checkpoint-$CHECKPOINT,trust_remote_code=True,parallelize=True,device_map=auto \
+  --model_args pretrained=./outputs/loss_gating_gemma3_1b_pt/checkpoint-$CHECKPOINT,trust_remote_code=True \
   --tasks "$TASKS" \
   --num_fewshot $NUM_FEWSHOT \
   --batch_size $BATCH_SIZE \
