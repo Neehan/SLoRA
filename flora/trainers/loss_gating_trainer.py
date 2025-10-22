@@ -67,7 +67,7 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         """
         norm_factors, w_u = self._get_norm_factors()
 
-        u_tilde_norm = (e @ w_u).norm(dim=-1)
+        u_tilde_norm = (e.to(w_u.dtype) @ w_u).norm(dim=-1)
         norm_sum = u_tilde_norm.clone()
 
         for factor in reversed(norm_factors):
