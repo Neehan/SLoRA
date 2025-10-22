@@ -20,7 +20,9 @@ training:
   max_grad_norm: 1.0
   logging_steps: 10
   evaluation_strategy: epoch
+  eval_steps: 100
   save_strategy: epoch
+  save_steps: 100
   save_total_limit: 2
   load_best_model_at_end: true
   seed: 42
