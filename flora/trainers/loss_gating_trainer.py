@@ -58,7 +58,7 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         w_u = self.model.base_model.model.lm_head.weight.data
         w_u_topk = w_u[topk_idx[0]]
 
-        u = (e_topk @ w_u_topk.T).norm(dim=-1)
+        u = (e_topk @ w_u_topk).norm(dim=-1)
 
         if self.lora_norm_accumulator is None or self.cached_valid_mask is None:
             raise RuntimeError("LoRA activations not captured. Hook may have failed.")
