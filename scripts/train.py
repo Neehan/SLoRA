@@ -70,15 +70,16 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
     )
 
     def formatting_func(example):
-        try:
+        if config["data"]["use_chat_template"]:
             text = tokenizer.apply_chat_template(
                 example["messages"],
                 tokenize=False,
                 add_generation_prompt=False,
             )
-            return {"text": text}
-        except Exception:
-            return {"text": None}
+        else:
+            messages = example["messages"]
+            text = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
+        return {"text": text}
 
     dataset_orig_size = len(dataset)  # type: ignore
     dataset = dataset.map(formatting_func)
@@ -148,28 +149,20 @@ def main():
     tokenizer.padding_side = "right"
 
     model_kwargs = {}
-    if config["model"].get("use_flash_attention_2", False):
-        try:
-            import flash_attn
-            model_kwargs["attn_implementation"] = "flash_attention_2"
-            logger.info("Using Flash Attention 2")
-        except ImportError as e:
-            logger.warning(f"Flash Attention 2 requested but not available: {e}. Falling back to sdpa attention.")
-            model_kwargs["attn_implementation"] = "sdpa"
+    if config["model"]["use_flash_attention_2"]:
+        import flash_attn
+        model_kwargs["attn_implementation"] = "flash_attention_2"
+        logger.info("Using Flash Attention 2")
     else:
         model_kwargs["attn_implementation"] = "sdpa"
         logger.info("Using sdpa attention implementation")
 
-    if config["model"].get("load_in_4bit", False):
+    if config["model"]["load_in_4bit"]:
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=getattr(
-                torch, config["model"].get("bnb_4bit_compute_dtype", "bfloat16")
-            ),
-            bnb_4bit_quant_type=config["model"].get("bnb_4bit_quant_type", "nf4"),
-            bnb_4bit_use_double_quant=config["model"].get(
-                "bnb_4bit_use_double_quant", True
-            ),
+            bnb_4bit_compute_dtype=getattr(torch, config["model"]["bnb_4bit_compute_dtype"]),
+            bnb_4bit_quant_type=config["model"]["bnb_4bit_quant_type"],
+            bnb_4bit_use_double_quant=config["model"]["bnb_4bit_use_double_quant"],
         )
         model_kwargs["quantization_config"] = bnb_config
         model_kwargs["device_map"] = "auto"
@@ -201,12 +194,9 @@ def main():
     training_args = TrainingArguments(
         output_dir=config["training"]["output_dir"],
         num_train_epochs=config["training"]["num_train_epochs"],
-        max_steps=config["training"].get("max_steps", -1),
+        max_steps=config["training"]["max_steps"],
         per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
-        per_device_eval_batch_size=config["training"].get(
-            "per_device_eval_batch_size",
-            config["training"]["per_device_train_batch_size"],
-        ),
+        per_device_eval_batch_size=config["training"]["per_device_eval_batch_size"],
         gradient_accumulation_steps=config["training"]["gradient_accumulation_steps"],
         gradient_checkpointing=config["training"]["gradient_checkpointing"],
         learning_rate=config["training"]["learning_rate"],
@@ -214,7 +204,7 @@ def main():
         warmup_ratio=config["training"]["warmup_ratio"],
         weight_decay=config["training"]["weight_decay"],
         bf16=config["training"]["bf16"],
-        tf32=config["training"].get("tf32", True),
+        tf32=config["training"]["tf32"],
         max_grad_norm=config["training"]["max_grad_norm"],
         logging_steps=config["training"]["logging_steps"],
         save_strategy=config["training"]["save_strategy"],
@@ -228,7 +218,7 @@ def main():
         dataloader_pin_memory=config["training"]["dataloader_pin_memory"],
         remove_unused_columns=config["training"]["remove_unused_columns"],
         report_to=config["logging"]["report_to"],
-        run_name=config["logging"].get("wandb_run_name", None),
+        run_name=config["logging"]["wandb_run_name"],
         ddp_find_unused_parameters=False,
     )
 

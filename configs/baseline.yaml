@@ -1,12 +1,14 @@
 model:
   name: google/gemma-3-1b-pt
   use_flash_attention_2: false
+  load_in_4bit: false
 
 training:
   output_dir: ./outputs/baseline_gemma3_1b_pt
   num_train_epochs: 1
   max_steps: 1000
   per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
   gradient_accumulation_steps: 8
   gradient_checkpointing: false
   learning_rate: 3.0e-5 # was 2.0e-5
@@ -54,6 +56,7 @@ data:
   max_seq_length: 2048
   prompt_field: prompt
   response_field: response
+  use_chat_template: false
 
 logging:
   use_wandb: true
