@@ -78,7 +78,7 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
             )
         else:
             messages = example["messages"]
-            text = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
+            text = "\n".join([f"<|{msg['role']}|>\n{msg['content']}" for msg in messages]) + "\n"
         return {"text": text}
 
     dataset_orig_size = len(dataset)  # type: ignore
