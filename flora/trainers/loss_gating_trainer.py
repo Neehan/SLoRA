@@ -5,7 +5,9 @@ from flora.trainers.base_token_gating_trainer import BaseTokenGatingTrainer
 
 
 class LossGatingTrainer(BaseTokenGatingTrainer):
-    def __init__(self, *args, topk_tokens: float, weight_clip: float, topk_logits: int, **kwargs):
+    def __init__(
+        self, *args, topk_tokens: float, weight_clip: float, topk_logits: int, **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self.topk_tokens = topk_tokens
         self.weight_clip = weight_clip
@@ -42,7 +44,9 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         self.lora_norm_accumulator = None
         self.cached_valid_mask = None
 
-    def compute_token_mask(self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor):
+    def compute_token_mask(
+        self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor
+    ):
         N, V = logits.size(0), logits.size(1)
         p = logits.float().softmax(dim=-1)
 
@@ -52,13 +56,15 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         else:
             e = p - F.one_hot(labels, V).float()
 
-        topk_vals, topk_idx = logits.topk(self.topk_logits, dim=-1)
-        e_topk = e.gather(1, topk_idx)
+        # topk_vals, topk_idx = logits.topk(self.topk_logits, dim=-1)
+        # e_topk = e.gather(1, topk_idx)
+
+        # w_u = self.model.base_model.model.lm_head.weight.data
+        # w_u_topk = w_u[topk_idx[0]]
 
         w_u = self.model.base_model.model.lm_head.weight.data
-        w_u_topk = w_u[topk_idx[0]]
 
-        u = (e_topk.to(w_u_topk.dtype) @ w_u_topk).norm(dim=-1)
+        u = (e.to(w_u.dtype) @ w_u).norm(dim=-1)
 
         if self.lora_norm_accumulator is None or self.cached_valid_mask is None:
             raise RuntimeError("LoRA activations not captured. Hook may have failed.")
@@ -67,7 +73,9 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         x_valid = x_flat[self.cached_valid_mask]
 
         if x_valid.size(0) != N:
-            raise RuntimeError(f"Accumulated norms size {x_valid.size(0)} doesn't match tokens {N}")
+            raise RuntimeError(
+                f"Accumulated norms size {x_valid.size(0)} doesn't match tokens {N}"
+            )
 
         scores = (u * x_valid).clamp_min(0.0)
 
@@ -78,8 +86,8 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         return mask, weights
 
     def _extract_hiddens_logits(self, outputs, labels, attention_mask):
-        valid_hiddens, valid_logits, valid_labels, logits_flat = super()._extract_hiddens_logits(
-            outputs, labels, attention_mask
+        valid_hiddens, valid_logits, valid_labels, logits_flat = (
+            super()._extract_hiddens_logits(outputs, labels, attention_mask)
         )
 
         if self.model.training:
@@ -92,13 +100,19 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
             else:
                 attention_mask_flat = torch.ones_like(labels_flat, dtype=torch.bool)
 
-            self.cached_valid_mask = (labels_flat != self.padding_label) & attention_mask_flat
+            self.cached_valid_mask = (
+                labels_flat != self.padding_label
+            ) & attention_mask_flat
 
         return valid_hiddens, valid_logits, valid_labels, logits_flat
 
-    def _compute_gated_loss(self, valid_hiddens, valid_logits, valid_labels, logits_flat):
+    def _compute_gated_loss(
+        self, valid_hiddens, valid_logits, valid_labels, logits_flat
+    ):
         try:
-            return super()._compute_gated_loss(valid_hiddens, valid_logits, valid_labels, logits_flat)
+            return super()._compute_gated_loss(
+                valid_hiddens, valid_logits, valid_labels, logits_flat
+            )
         finally:
             self.lora_norm_accumulator = None
             self.cached_valid_mask = None
