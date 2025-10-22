@@ -27,15 +27,15 @@ lm_eval --model hf \
   --output_path reports/gemma-3-1b-pt.json
 
 echo "================================================"
-echo "Evaluating: base_token_gating_gemma3_1b_pt"
+echo "Evaluating: baseline_token_gating_gemma3_1b_pt"
 lm_eval --model hf \
-  --model_args pretrained=./outputs/base_token_gating_gemma3_1b_pt/checkpoint-$CHECKPOINT,trust_remote_code=True,parallelize=True,device_map=auto \
+  --model_args pretrained=./outputs/baseline_token_gating_gemma3_1b_pt/checkpoint-$CHECKPOINT,trust_remote_code=True,parallelize=True,device_map=auto \
   --tasks "$TASKS" \
   --num_fewshot $NUM_FEWSHOT \
   --batch_size $BATCH_SIZE \
   --apply_chat_template \
   --gen_kwargs "temperature=$TEMPERATURE" \
-  --output_path reports/base_token_gating_gemma3_1b_pt.json
+  --output_path reports/baseline_token_gating_gemma3_1b_pt.json
 
 echo "================================================"
 echo "Evaluating: random_gemma3_1b_pt"
