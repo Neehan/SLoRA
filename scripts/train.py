@@ -18,6 +18,7 @@ from transformers import (
     DataCollatorForLanguageModeling,
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from flora.utils.data_templates import format_tulu3, format_open_platypus, format_gsm8k
 from datasets import load_dataset
 
 from flora.trainers.baseline import BaselineTrainer
@@ -60,12 +61,15 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
 
 def prepare_data(config: Dict[str, Any], tokenizer, logger):
+    dataset_subset = config["data"].get("dataset_subset", None)
     dataset = load_dataset(
         config["data"]["dataset_name"],
+        dataset_subset,
         split=config["data"]["train_split"],
     )
     eval_dataset = load_dataset(
         config["data"]["dataset_name"],
+        dataset_subset,
         split=config["data"]["eval_split"],
     )
 
@@ -77,39 +81,18 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
                 add_generation_prompt=False,
             )
             return {"text": text}
+
+        dataset_name = config["data"]["dataset_name"]
+        if "allenai/tulu-3" in dataset_name:
+            formatted = format_tulu3(example)
+        elif "garage-bAInd/Open-Platypus" in dataset_name:
+            formatted = format_open_platypus(example)
+        elif "openai/gsm8k" in dataset_name:
+            formatted = format_gsm8k(example)
         else:
-            if "messages" in example:
-                messages = example["messages"]
-                formatted = "<bos>"
-                for msg in messages:
-                    if msg["role"] == "user":
-                        formatted += (
-                            f"<start_of_turn>user\n{msg['content']}<end_of_turn>\n"
-                        )
-                    elif msg["role"] == "assistant" or msg["role"] == "model":
-                        formatted += (
-                            f"<start_of_turn>model\n{msg['content']}<end_of_turn>\n"
-                        )
-                    else:
-                        return {"text": None}
-                if formatted == "<bos>":
-                    return {"text": None}
-                formatted += "<eos>"
-                return {"text": formatted}
-            elif "instruction" in example:
-                instruction = example["instruction"]
-                input_text = example.get("input", "")
-                output = example["output"]
+            formatted = None
 
-                if input_text:
-                    user_content = f"{instruction}\n\n{input_text}"
-                else:
-                    user_content = instruction
-
-                formatted = f"<bos><start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n{output}<end_of_turn>\n<eos>"
-                return {"text": formatted}
-            else:
-                return {"text": None}
+        return {"text": formatted}
 
     dataset_orig_size = len(dataset)  # type: ignore
     dataset = dataset.map(formatting_func)

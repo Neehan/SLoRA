@@ -50,12 +50,13 @@ gating:
   method: baseline
 
 data:
-  dataset_name: garage-bAInd/Open-Platypus
+  dataset_name: openai/gsm8k
+  dataset_subset: main
   train_split: "train"
-  eval_split: "train[:1000]"
+  eval_split: "test"
   max_seq_length: 1024
-  prompt_field: instruction
-  response_field: output
+  prompt_field: question
+  response_field: answer
   use_chat_template: false
 
 logging:
