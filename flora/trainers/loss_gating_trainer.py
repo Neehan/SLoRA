@@ -13,7 +13,6 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         self.hook_handles = []
         self.lora_norm_accumulator = None
         self.cached_valid_mask = None
-        self.w_u = None
 
     def _install_hooks(self):
         def forward_hook(module, input, output):
@@ -57,9 +56,9 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         e_topk = e.gather(1, topk_idx)
 
         w_u = self.model.base_model.model.lm_head.weight.data
-        w_u_topk = w_u[topk_idx]
+        w_u_topk = w_u[topk_idx[0]]
 
-        u = (e_topk.unsqueeze(1) @ w_u_topk.transpose(-2, -1)).squeeze(1).norm(dim=-1)
+        u = (e_topk @ w_u_topk.T).norm(dim=-1)
 
         if self.lora_norm_accumulator is None or self.cached_valid_mask is None:
             raise RuntimeError("LoRA activations not captured. Hook may have failed.")
