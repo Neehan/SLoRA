@@ -16,6 +16,16 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
         if self.w_o_norm_factors is not None and self.w_u is not None:
             return self.w_o_norm_factors, self.w_u
 
+        print("=" * 80)
+        print("DEBUG: Model structure")
+        print("=" * 80)
+        for name, module in self.model.named_modules():
+            if "o_proj" in name or "lm_head" in name:
+                print(f"Name: {name}")
+                print(f"Type: {type(module)}")
+                print(f"Dir: {[x for x in dir(module) if not x.startswith('_')][:20]}")
+                print("-" * 80)
+
         layers_dict = {}
         for name, module in self.model.named_modules():
             if ".self_attn.o_proj" in name or ".self_attn.out_proj" in name:
