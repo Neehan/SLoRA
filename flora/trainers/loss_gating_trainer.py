@@ -5,13 +5,15 @@ from flora.trainers.base_token_gating_trainer import BaseTokenGatingTrainer
 
 
 class LossGatingTrainer(BaseTokenGatingTrainer):
-    def __init__(self, *args, topk_tokens: float, weight_clip: float, **kwargs):
+    def __init__(self, *args, topk_tokens: float, weight_clip: float, topk_logits: int, **kwargs):
         super().__init__(*args, **kwargs)
         self.topk_tokens = topk_tokens
         self.weight_clip = weight_clip
+        self.topk_logits = topk_logits
         self.hook_handles = []
         self.lora_norm_accumulator = None
         self.cached_valid_mask = None
+        self.w_u = None
 
     def _install_hooks(self):
         def forward_hook(module, input, output):
@@ -44,19 +46,20 @@ class LossGatingTrainer(BaseTokenGatingTrainer):
     def compute_token_mask(self, hiddens: torch.Tensor, logits: torch.Tensor, labels: torch.Tensor):
         N, V = logits.size(0), logits.size(1)
         p = logits.float().softmax(dim=-1)
-        p_true = p.gather(1, labels.view(-1, 1)).squeeze(1)
-        p_sumsq = (p * p).sum(dim=-1)
 
         eps = float(getattr(self.args, "label_smoothing_factor", 0.0))
         if eps > 0:
-            y_norm_sq = (1 - eps) ** 2 + (eps ** 2) / (V - 1)
-            p_dot_y = (1 - eps) * p_true + (eps / (V - 1)) * (1 - p_true)
+            e = p - ((1 - eps) * F.one_hot(labels, V).float() + eps / V)
         else:
-            y_norm_sq = 1.0
-            p_dot_y = p_true
+            e = p - F.one_hot(labels, V).float()
 
-        u2 = p_sumsq + y_norm_sq - 2.0 * p_dot_y
-        u = torch.sqrt(u2.clamp_min(0.0) + 1e-12)
+        topk_vals, topk_idx = logits.topk(self.topk_logits, dim=-1)
+        e_topk = e.gather(1, topk_idx)
+
+        w_u = self.model.base_model.model.lm_head.weight.data
+        w_u_topk = w_u[topk_idx]
+
+        u = (e_topk.unsqueeze(1) @ w_u_topk.transpose(-2, -1)).squeeze(1).norm(dim=-1)
 
         if self.lora_norm_accumulator is None or self.cached_valid_mask is None:
             raise RuntimeError("LoRA activations not captured. Hook may have failed.")
