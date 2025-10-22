@@ -1,10 +1,10 @@
 base: baseline.yaml
 
 training:
-  output_dir: ./outputs/baseline_token_gating_gemma3_1b_it
+  output_dir: ./outputs/baseline_token_gating_gemma3_1b
 
 gating:
   method: baseline_token_gating
 
 logging:
-  wandb_run_name: baseline_token_gating_gemma3_1b_it
+  wandb_run_name: baseline_token_gating_gemma3_1b

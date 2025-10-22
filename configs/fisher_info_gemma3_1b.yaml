@@ -1,0 +1,10 @@
+base: flora_gemma3_1b.yaml
+
+training:
+  output_dir: ./outputs/fisher_info_gemma3_1b
+
+gating:
+  method: fisher_info
+
+logging:
+  wandb_run_name: fisher_info_gemma3_1b

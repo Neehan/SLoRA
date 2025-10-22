@@ -1,0 +1,10 @@
+base: flora_gemma3_1b.yaml
+
+training:
+  output_dir: ./outputs/loss_gating_gemma3_1b
+
+gating:
+  method: loss_gating
+
+logging:
+  wandb_run_name: loss_gating_gemma3_1b

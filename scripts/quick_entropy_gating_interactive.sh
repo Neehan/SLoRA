@@ -27,10 +27,10 @@ accelerate launch \
     --num_processes 2 \
     --mixed_precision bf16 \
     scripts/train.py \
-    --config configs/entropy_gating_gemma3_1b_it.yaml
+    --config configs/entropy_gating_gemma3_1b.yaml
 
 echo "Entropy Gating test complete!"
 echo "End time: $(date)"
 echo ""
-echo "Results: outputs/entropy_gating_gemma3_1b_it"
+echo "Results: outputs/entropy_gating_gemma3_1b"
 echo "Check W&B project 'flora' for metrics"

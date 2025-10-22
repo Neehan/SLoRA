@@ -8,7 +8,7 @@
 
 set -e
 
-echo "=== FLoRA Full Experiment (Gemma-3-12B-it, 400k samples) ==="
+echo "=== FLoRA Full Experiment (Gemma-3-12B, 400k samples) ==="
 echo "Starting time: $(date)"
 
 cd "$(dirname "$0")/.."
@@ -22,8 +22,8 @@ export WANDB_PROJECT="flora"
 echo "Starting full FLoRA run..."
 accelerate launch --config_file configs/accelerate_config.yaml \
     scripts/train.py \
-    --config configs/full_gemma3_12b_it.yaml
+    --config configs/full_gemma3_12b.yaml
 
 echo "Full experiment complete!"
 echo "End time: $(date)"
-echo "Results: outputs/full_gemma3_12b_it"
+echo "Results: outputs/full_gemma3_12b"

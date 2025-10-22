@@ -1,17 +1,17 @@
 model:
-  name: google/gemma-3-1b-it
+  name: google/gemma-3-1b
   use_flash_attention_2: false
 
 training:
-  output_dir: ./outputs/baseline_gemma3_1b_it
+  output_dir: ./outputs/baseline_gemma3_1b
   num_train_epochs: 1
   max_steps: 1000
   per_device_train_batch_size: 2
   gradient_accumulation_steps: 8
   gradient_checkpointing: false
-  learning_rate: 2.0e-5
+  learning_rate: 3.0e-5 # was 2.0e-5
   lr_scheduler_type: cosine
-  warmup_ratio: 0.03
+  warmup_ratio: 0.05 # was 0.03
   weight_decay: 0.01
   bf16: true
   tf32: true
@@ -58,5 +58,5 @@ data:
 logging:
   use_wandb: true
   wandb_project: flora
-  wandb_run_name: baseline_gemma3_1b_it
+  wandb_run_name: baseline_gemma3_1b
   report_to: wandb

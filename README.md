@@ -39,13 +39,13 @@ accelerate launch --config_file configs/accelerate_config.yaml \
 **Random baseline (random 20% token selection):**
 ```bash
 accelerate launch --config_file configs/accelerate_config.yaml \
-    scripts/train.py --config configs/random_gemma3_1b_it.yaml
+    scripts/train.py --config configs/random_gemma3_1b.yaml
 ```
 
 **FLoRA (sketch-based selection):**
 ```bash
 accelerate launch --config_file configs/accelerate_config.yaml \
-    scripts/train.py --config configs/quick_gemma3_1b_it.yaml
+    scripts/train.py --config configs/quick_gemma3_1b.yaml
 ```
 
 ---
@@ -102,8 +102,8 @@ FLoRA/
 │   └── utils/                   # Logging, seeding
 ├── configs/
 │   ├── baseline.yaml            # Standard LoRA
-│   ├── random_gemma3_1b_it.yaml # Random baseline
-│   └── quick_gemma3_1b_it.yaml  # FLoRA
+│   ├── random_gemma3_1b.yaml # Random baseline
+│   └── quick_gemma3_1b.yaml  # FLoRA
 └── scripts/
     ├── train.py                 # Main training script
     ├── quick_baseline.sh        # Run baseline

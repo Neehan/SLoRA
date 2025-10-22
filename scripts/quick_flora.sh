@@ -35,10 +35,10 @@ accelerate launch \
     --num_processes 4 \
     --mixed_precision bf16 \
     scripts/train.py \
-    --config configs/flora_gemma3_1b_it.yaml 2>&1 | tee logs/flora_gemma3_1b_it.log
+    --config configs/flora_gemma3_1b.yaml 2>&1 | tee logs/flora_gemma3_1b.log
 
 echo "FLoRA complete!"
 echo "End time: $(date)"
 echo ""
-echo "Results: outputs/flora_gemma3_1b_it"
+echo "Results: outputs/flora_gemma3_1b"
 echo "Check W&B project 'flora' for metrics"
