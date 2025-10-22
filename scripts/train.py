@@ -78,21 +78,37 @@ def prepare_data(config: Dict[str, Any], tokenizer, logger):
             )
             return {"text": text}
         else:
-            messages = example["messages"]
-            formatted = ""
-            for msg in messages:
-                if msg["role"] == "user":
-                    formatted += f"<start_of_turn>user\n{msg['content']}<end_of_turn>\n"
-                elif msg["role"] == "assistant" or msg["role"] == "model":
-                    formatted += (
-                        f"<start_of_turn>model\n{msg['content']}<end_of_turn>\n"
-                    )
-                else:  # skip examples with tool calls gemma doesnt support them
+            if "messages" in example:
+                messages = example["messages"]
+                formatted = "<bos>"
+                for msg in messages:
+                    if msg["role"] == "user":
+                        formatted += (
+                            f"<start_of_turn>user\n{msg['content']}<end_of_turn>\n"
+                        )
+                    elif msg["role"] == "assistant" or msg["role"] == "model":
+                        formatted += (
+                            f"<start_of_turn>model\n{msg['content']}<end_of_turn>\n"
+                        )
+                    else:
+                        return {"text": None}
+                if formatted == "<bos>":
                     return {"text": None}
-            if not formatted:
-                return {"text": None}
+                return {"text": formatted}
+            elif "instruction" in example:
+                instruction = example["instruction"]
+                input_text = example.get("input", "")
+                output = example["output"]
 
-            return {"text": formatted}
+                if input_text:
+                    user_content = f"{instruction}\n\n{input_text}"
+                else:
+                    user_content = instruction
+
+                formatted = f"<bos><start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n{output}<end_of_turn>"
+                return {"text": formatted}
+            else:
+                return {"text": None}
 
     dataset_orig_size = len(dataset)  # type: ignore
     dataset = dataset.map(formatting_func)

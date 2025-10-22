@@ -6,25 +6,23 @@ model:
 training:
   output_dir: ./outputs/baseline_gemma3_1b_pt
   num_train_epochs: 1
-  max_steps: 1000
-  per_device_train_batch_size: 2
-  per_device_eval_batch_size: 2
-  gradient_accumulation_steps: 8
+  max_steps: -1
+  per_device_train_batch_size: 8
+  per_device_eval_batch_size: 8
+  gradient_accumulation_steps: 4
   gradient_checkpointing: false
-  learning_rate: 3.0e-5 # was 2.0e-5
+  learning_rate: 2.0e-5
   lr_scheduler_type: cosine
-  warmup_ratio: 0.05 # was 0.03
+  warmup_ratio: 0.04
   weight_decay: 0.01
   bf16: true
   tf32: true
   max_grad_norm: 1.0
   logging_steps: 10
-  save_strategy: steps
-  save_steps: 500
+  evaluation_strategy: epoch
+  save_strategy: epoch
   save_total_limit: 2
-  evaluation_strategy: steps
-  eval_steps: 200
-  load_best_model_at_end: false
+  load_best_model_at_end: true
   seed: 42
   dataloader_num_workers: 2
   dataloader_pin_memory: true
@@ -50,12 +48,12 @@ gating:
   method: baseline
 
 data:
-  dataset_name: allenai/tulu-3-sft-mixture
-  train_split: "train[:128000]"
-  eval_split: "train[128000:132000]"
-  max_seq_length: 2048
-  prompt_field: prompt
-  response_field: response
+  dataset_name: garage-bAInd/Open-Platypus
+  train_split: "train"
+  eval_split: "train[:1000]"
+  max_seq_length: 1024
+  prompt_field: instruction
+  response_field: output
   use_chat_template: false
 
 logging:
