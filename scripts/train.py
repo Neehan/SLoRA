@@ -148,8 +148,17 @@ def main():
     tokenizer.padding_side = "right"
 
     model_kwargs = {}
-    if config["model"].get("use_flash_attention_2", True):
-        model_kwargs["attn_implementation"] = "flash_attention_2"
+    if config["model"].get("use_flash_attention_2", False):
+        try:
+            import flash_attn
+            model_kwargs["attn_implementation"] = "flash_attention_2"
+            logger.info("Using Flash Attention 2")
+        except ImportError as e:
+            logger.warning(f"Flash Attention 2 requested but not available: {e}. Falling back to sdpa attention.")
+            model_kwargs["attn_implementation"] = "sdpa"
+    else:
+        model_kwargs["attn_implementation"] = "sdpa"
+        logger.info("Using sdpa attention implementation")
 
     if config["model"].get("load_in_4bit", False):
         bnb_config = BitsAndBytesConfig(
